@@ -1,0 +1,3 @@
+redis/ip=172.16.5.91
+mysql/meterstat/ip=172.16.9.110
+mysql/app_eemsop/ip=172.16.9.100
