@@ -9,9 +9,10 @@ read config file in style of agcavc project, which means
 a/b=c
 with be readed as {'a':{'b':'c'}}, dictory can be nested.
 Usage:
+from read_config import ReadConfig as ReadConfig
 cfg = ReadConfig(path),
-cfg_dic=cfg.check_config() to get a refreshed config,
 cfg.config to get the cached config dic.
+cfg_dic=cfg.check_config() to get a refreshed config,
 """
 
 __all__ = ['ReadConfig']
