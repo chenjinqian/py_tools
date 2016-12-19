@@ -5,21 +5,27 @@
 # Email: 2012chenjinqian@gmail.com
 
 """
-read config file in style of agcavc project, which means
+1. AGCAVC style config file
 a/b=c
-with be readed as {'a':{'b':'c'}}, dictory can be nested.
+will be readed as {'a':{'b':'c'}}, dictory can be nested.
+
 Usage:
 from read_config import ReadConfig as ReadConfig
-cfg = ReadConfig(path),
-cfg.config to get the cached config dic.
-cfg_dic=cfg.check_config() to get a refreshed config,
+cfg = ReadConfig(path) # config instance
+cfg.config # get the cached config dic.
+cfg_dic=cfg.check_config() # get a refreshed config,
 
-DB type config file is like:
+2. DB type config file is like:
 [mysql:db_name]
 ip=xx.xx.xx.xx
 port = xx
 
-use ReadConfig_DB will read this file in dictory version.
+use ReadConfig_DB will read this file as dictory{'mysql:db_name':{'ip':'xx.xx.xx.xx', port:xx}}
+
+Usage:
+cfg2 = ReadConfig_DB(path)        # config instance
+config_dict = cfg2.config         # config dictory
+config_dict = cfg2.check_config() # refresh config dictory
 """
 
 import re, os, sys
@@ -116,16 +122,16 @@ class ReadConfig_DB(object):
 
 
 def main():
-    # # TODO: If args is -h, then print help message.
-    # print("tool class for reading config")
-    # print("Usage: cfg = ReadConfig(path), cfg_dic=cfg.check_config() to get a refreshed config, and cfg.config to get the cached config dic.")
-    # print("reading config file db.info... ")
-    # import os
-    # fp = os.path.realpath('db.info')
-    # config=ReadConfig(fp)
-    # # config_dic = config.check_config()
-    # config_dic = config.config
-    # print("config_dic is %s" % (config_dic))
+    # TODO: If args is -h, then print help message.
+    print("tool class for reading config")
+    print("Usage: cfg = ReadConfig(path), cfg_dic=cfg.check_config() to get a refreshed config, and cfg.config to get the cached config dic.")
+    print("reading config file db.info... ")
+    import os
+    fp = os.path.realpath('db.info')
+    config=ReadConfig(fp)
+    # config_dic = config.check_config()
+    config_dic = config.config
+    print("config_dic is %s" % (config_dic))
     fp2 = os.path.realpath('./db.ini')
     config2 = ReadConfig_DB(fp2)
     config_dic2 = config2.config
