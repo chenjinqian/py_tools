@@ -15,7 +15,9 @@ cfg.config to get the cached config dic.
 cfg_dic=cfg.check_config() to get a refreshed config,
 """
 
-__all__ = ['ReadConfig']
+import re, os, sys
+
+__all__ = ['ReadConfig', 'ReadConfig2']
 
 
 class ReadConfig(object):
@@ -56,6 +58,50 @@ class ReadConfig(object):
                 continue
         self.config = config
         return config
+
+
+
+class ReadConfig_DB(object):
+    def __init__(self, fpath, convert_port=True):
+        "docstring"
+        self.path = str(fpath)
+        self.convert_port = convert_port
+        self.check_config()
+
+    def check_config(self, convert_port=convert_port):
+        try:
+            with open(self.fpath, 'rb') as f:
+                self.data = f.readlines()
+        except:
+            self.config = {}
+            return self.config
+        zone_name = ''
+        config = {}
+        for d in self.data:
+            d = d.replace('\40', '')
+            d = d.replace('\r', '')
+            d = d.replace('\n', '')
+            if d=='' or d[0] == '#':
+                continue
+            re_m = re.match('^\[(.*)\]$', d)
+            if re_m:
+                zone_name= re_m.group(1)
+                config[zone_name] = {}
+                print(zone_name)
+            elif '=' in d:
+                d = d.split('=')
+                if not len(d) == 2:
+                    continue
+                if zone_key:
+                    if convert_port and d[0] in ['port', 'Port', 'PORT']:
+                        config[zone_key][d[0]] = int(d[1])
+                    else:
+                        config[zone_key][d[0]] = d[1]
+            else:
+                continue
+        self.config = config
+        return self.config
+
 
 
 
