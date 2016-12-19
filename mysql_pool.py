@@ -18,17 +18,17 @@ import MySQLdb
 
 class MySQLdb_pool(object):
     # create connect instance
-    def __init__(self, host='127.0.0.1', db='mysql', user='mysql', maxconnections=5, **conndict):
+    def __init__(self, host='127.0.0.1', db='mysql', user='mysql', cnx_num=5, **conndict):
         self.host = host
         self.db=db
         self.user=user
         self.conndict = conndict
         from Queue import Queue
-        self._pool = Queue(maxconnections) # create the queue
-        self.maxconnections=maxconnections
+        self._pool = Queue(cnx_num) # create the queue
+        self.cnx_num=cnx_num
         # create given amount of connection and add into queue.
         try:
-            for i in range(maxconnections):
+            for i in range(cnx_num):
                 self.fillConnection(self.CreateConnection())
         except:
             print('fail init create connection to db')
@@ -89,13 +89,14 @@ class MySQLdb_pool(object):
 
 class MySQLWrapper(object):
 
-    def __init__(self, host='127.0.0.1', user='mysql', db='5432', **dic):
+    def __init__(self, host='127.0.0.1', user='mysql', db='5432', cnx_num=5, **dic):
         self.host = host
         self.db=db
         self.user=user
         self.dic=dic
+        self.cnx_num = cnx_num
         # print('dic',dic)
-        self.pool = MySQLdb_pool(host = self.host, db = self.db, user = self.user, **dic)
+        self.pool = MySQLdb_pool(host = self.host, db = self.db, user = self.user, cnx_num = self.cnx_num, **dic)
 
 
     def do_work(self, q):
@@ -114,7 +115,7 @@ class MySQLWrapper(object):
             return None
 
 
-def test_MySQLWrapper(number=13):
+def test_MySQLWrapper(qry_num=13, cnx_num=20):
     """test passed, in one test, 100 query use 5.16s, normal query spend 57.3s
     [2.5750229358673096,
     2.3464691638946533,
@@ -127,22 +128,23 @@ def test_MySQLWrapper(number=13):
     sop = {'db': 'app_eemsop','host': '172.16.9.100','passwd': 'Nf20161201','user': 'h_eems1-refiner'}
     ####
     try:
-        sql_pool1 = MySQLWrapper(**sop)
+        sql_pool1 = MySQLWrapper(cnx_num=cnx_num,**sop)
+        # sql_pool1 = MySQLWrapper(**sop) # default 5, no big difference.
     except:
         print('error')
         return -1
     time1_start = time.time()
     time0_spend = time1_start - time0_start
-    for i in range(int(number)):
+    for i in range(int(qry_num)):
         sql = 'select * from users where id=%s' % (int(random.random() * 5))
         res = sql_pool1.do_work(sql)
     # print(res)
     time1_end = time.time()
     time1_spend = time1_end - time1_start
-    print('my own mysql wraper, query  times %s, spend %s s' % (number, time1_spend))
+    print('my own mysql wraper, query  times %s, spend %s s' % (qry_num, time1_spend))
 
     time2_start = time.time()
-    for i in range(int(number)):
+    for i in range(int(qry_num)):
         conn = MySQLdb.connect(**sop)
         c = conn.cursor()
         c.execute('select * from users where id=%s' % (int(random.random() * 5)))
@@ -155,20 +157,20 @@ def test_MySQLWrapper(number=13):
     time3_start = time.time()
     conn = MySQLdb.connect(**sop)
     c = conn.cursor()
-    for i in range(int(number)):
+    for i in range(int(qry_num)):
         c.execute('select * from users where id=%s' % (int(random.random() * 5)))
         res = c.fetchall()
     c.close()
     conn.close()
     time3_end = time.time()
     time3_spend = time3_end - time1_start
-    print('normal, query  times %s, spend %s s' % (number, time2_spend))
+    print('normal, query  times %s, spend %s s' % (qry_num, time2_spend))
 
     # # there is no module name DBUtils.PooledDb
     from DBUtils.PooledDB import PooledDB
     pool = PooledDB(creator=MySQLdb, mincached=1 , maxcached=20 ,**sop)
     time4_start = time.time()
-    for i in range(int(number)):
+    for i in range(int(qry_num)):
         conn = pool.connection()
         c = conn.cursor()
         c.execute('select * from users where id=%s' % (int(random.random() * 5)))
@@ -180,7 +182,7 @@ def test_MySQLWrapper(number=13):
 
 
 def main():
-    test_MySQLWrapper(number=100)
+    test_MySQLWrapper(qry_num=100)
 
 
 if __name__ == '__main__':
