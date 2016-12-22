@@ -15,4 +15,4 @@ mysql/meterstat15/passwd=Nf20161201
 mysql/app_eemsop/host=172.16.9.100
 mysql/app_eemsop/user=h_eems1-refiner
 mysql/app_eemsop/db=app_eemsop
-mysql/app_eemsop/passwd=Nf20161201%
+mysql/app_eemsop/passwd=Nf20161201
