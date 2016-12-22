@@ -73,13 +73,34 @@ class ReadConfig(object):
 
 
 class ReadConfig_DB(object):
-    def __init__(self, fpath, convert_port=True):
+    def __init__(self, fpath):
         "docstring"
         self.fpath = str(fpath)
-        self.convert_port = convert_port
-        self.check_config()
+        self.check_config(set_config=True)
 
-    def check_config(self):
+    def db_style_convert(self, key_str):
+        """if key is not"""
+        if self.db_type == 'mysql':
+            self.rpl += ['username', 'user', 'password', 'passwd', 'database', 'db', 'dbname', 'db']
+        if self.rpl:
+           for rp in zip(*[iter(self.rpl)]*2):
+               # [1,2,3,4] to [[1,2], [3,4]]
+               try:
+                   if key_str == rp[0]:
+                       # print('cached %s' % key_str)
+                       return str(rp[1])
+               except Exception:
+                   continue
+           return key_str
+        else:
+            return key_str
+
+
+    def check_config(self, db_type='', convert_port=False, set_config=False, replace=[]):
+        self.convert_port = convert_port
+        self.db_type=db_type
+        self.rpl = replace
+        # print('replace is %s' % replace)
         try:
             with open(self.fpath, 'rb') as f:
                 self.data = f.readlines()
@@ -108,13 +129,80 @@ class ReadConfig_DB(object):
                 if zone_key:
                     if self.convert_port and d[0] in ['port', 'Port', 'PORT']:
                         try:
-                            config[zone_key][d[0]] = int(d[1])
+                            config[zone_key][self.db_style_convert(d[0])] = int(d[1])
                         except:
                             print('fail in converting port to int')
                             return -1
                             # if fail to convert, just crash print.
                     else:
-                        config[zone_key][d[0]] = d[1]
+                        config[zone_key][self.db_style_convert(d[0])] = d[1]
+            else:
+                continue
+        if set_config:
+            self.config = config
+        return config
+
+
+class ReadConfig_DB_v01(object):
+    def __init__(self, fpath):
+        "docstring"
+        self.fpath = str(fpath)
+        self.check_config()
+
+    def db_style_convert(self, key_str):
+        """if key is not"""
+        if self.db_type=='mysql':
+            lower_str = str(key_str).lower()
+            if lower_str in ['username', 'user', 'name']:
+                return 'user'
+            if lower_str in ['password', 'pwd']:
+                return 'passwd'
+            if lower_str in ['database', 'db_name', 'dbname']:
+                return 'db'
+            else:
+                return key_str
+        else:
+            return key_str
+
+
+    def check_config(self, db_type='', convert_port=False):
+        self.convert_port = convert_port
+        self.db_type=db_type
+        try:
+            with open(self.fpath, 'rb') as f:
+                self.data = f.readlines()
+        except:
+            self.config = {}
+            return self.config
+        zone_key = ''
+        config = {}
+        for d in self.data:
+            # print(d)
+            d = d.replace('\40', '')
+            d = d.replace('\r', '')
+            d = d.replace('\n', '')
+            if d=='' or d[0] == '#':
+                continue
+            re_m = re.match('^\[(.*)\]$', d)
+            # print(d, re_m)
+            if re_m:
+                zone_key= re_m.group(1)
+                config[zone_key] = {}
+                # print(zone_key)
+            elif '=' in d:
+                d = d.split('=')
+                if not len(d) == 2:
+                    continue
+                if zone_key:
+                    if self.convert_port and d[0] in ['port', 'Port', 'PORT']:
+                        try:
+                            config[zone_key][self.db_style_convert(d[0])] = int(d[1])
+                        except:
+                            print('fail in converting port to int')
+                            return -1
+                            # if fail to convert, just crash print.
+                    else:
+                        config[zone_key][self.db_style_convert(d[0])] = d[1]
             else:
                 continue
         self.config = config
