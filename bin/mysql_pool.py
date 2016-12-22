@@ -22,7 +22,7 @@ class MySQLdb_pool(object):
         self.host = host
         self.db=db
         self.user=user
-        self.conndict = conndict
+        self._extral_para_dict = conndict
         from Queue import Queue
         self._pool = Queue(cnx_num) # create the queue
         self.cnx_num=cnx_num
@@ -77,7 +77,7 @@ class MySQLdb_pool(object):
 
     def CreateConnection(self):
         try:
-            conndb=MySQLdb.connect(host=self.host, db=self.db, user=self.user,  **self.conndict)
+            conndb=MySQLdb.connect(host=self.host, db=self.db, user=self.user,  **self._extral_para_dict)
             conndb.clientinfo = 'mysql database sync connection pool'
             conndb.ping()
             return conndb
@@ -93,7 +93,7 @@ class MySQLWrapper(object):
         self.host = host
         self.db=db
         self.user=user
-        self.dic=dic
+        # self.dic=dic
         self.cnx_num = cnx_num
         # print('dic',dic)
         self.pool = MySQLdb_pool(host = self.host, db = self.db, user = self.user, cnx_num = self.cnx_num, **dic)
