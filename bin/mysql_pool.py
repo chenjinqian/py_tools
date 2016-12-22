@@ -26,6 +26,7 @@ class MySQLdb_pool(object):
         from Queue import Queue
         self._pool = Queue(cnx_num) # create the queue
         self.cnx_num=cnx_num
+        self.cnx_now=0
         # create given amount of connection and add into queue.
         try:
             for i in range(cnx_num):
@@ -37,41 +38,51 @@ class MySQLdb_pool(object):
     def fillConnection(self,conn):
         try:
             self._pool.put(conn)
+            self.cnx_now += 1
         except:
+            print('can not put conn back to queue. ')
             print(str(sys.exc_info()))
 
     def returnConnection(self, conn):
         try:
-            if  conn and conn.open:
-                self._pool.put(conn)
+            if self.cnx_now >= self.cnx_num:
+                print('extra connection, close.')
+                self.CloseConnection(conn)
+            elif  conn and conn.open:
+                self.fillConnection(conn)
             else:
                 print('broken conn, replace at returning back.')
-                self.CreateConnection()
+                self.fillConnection(self.CreateConnection())
         except:
             print(str(sys.exc_info()))
 
     def getConnection(self):
         try:
-            conn = self._pool.get()
+            if self.cnx_now < 2:
+                conn = self.CreateConnection()
+            else:
+                conn = self._pool.get()
+                self.cnx_now -= 1
             # conn.ping()
             try:
                 if not (conn and conn.open):
-                    conn = self.CreateConnection()
                     print('pop a broken conn, replace it to valid conn at the out gateway...')
-                return conn
+                return self.CreateConnection()
             except:
                 print('except at out gatway, replacing conn')
                 print(str(sys.exc_info()))
                 return self.CreateConnection()
         except:
+            print("error in get connection and creat usefull connection.")
             print(str(sys.exc_info()))
+            return None
 
-    def ColseConnection(self,conn):
+    def CloseConnection(self,conn):
         try:
             # self._pool.get().close()
             conn.close()
-            new_conn = self.CreateConnection()
-            self.fillConnection(new_conn)
+            # new_conn = self.CreateConnection()
+            # self.fillConnection(new_conn)
         except:
             print(str(sys.exc_info()))
 
@@ -82,9 +93,10 @@ class MySQLdb_pool(object):
             conndb.ping()
             return conndb
         except:
-            print(str(sys.exc_info()))
             print('createConnection error, %s ' % (str(sys.exc_info())))
-            raise
+            print('creating none connection.')
+            return None
+            # raise
 
 
 class MySQLWrapper(object):
@@ -101,8 +113,8 @@ class MySQLWrapper(object):
 
     def do_work(self, q):
         con = self.pool.getConnection()
-        c = con.cursor()
         try:
+            c = con.cursor()
             c.execute(q)
             res = c.fetchall()
             # # should I add this line? will be much longer.
@@ -110,7 +122,8 @@ class MySQLWrapper(object):
             self.pool.returnConnection(con)
             return res
         except:
-            con.rollback()
+            if con:
+                con.rollback()
             self.pool.returnConnection(con)
             return None
 
