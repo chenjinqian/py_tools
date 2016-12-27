@@ -90,7 +90,7 @@ class MySQLdb_pool(object):
         try:
             conndb=MySQLdb.connect(host=self.host, db=self.db, user=self.user,  **self._extral_para_dict)
             conndb.clientinfo = 'mysql database sync connection pool'
-            conndb.ping()
+            conndb.ping(True)
             return conndb
         except:
             print('createConnection error, %s ' % (str(sys.exc_info())))

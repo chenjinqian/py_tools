@@ -8,6 +8,9 @@ Example:
     r = redis_pool.get_cursor()
 """
 
+import redis
+
+
 class RedisWrapper(object):
 
     def __init__(self, host='127.0.0.1', port='6379', db='0', name=None, **dic):
