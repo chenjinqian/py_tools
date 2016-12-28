@@ -11,7 +11,6 @@ import scipy as sp
 
 import time, os, sys
 
-
 dbini = read_config.ReadConfig_DB('../config/db.ini')
 dbini_d = dbini.check_config(db_type='mysql', convert_port=True)
 
@@ -27,6 +26,8 @@ syd_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemsyd'])
 sydw = syd_pool.do_work
 scr_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemscr'])
 scrw = syd_pool.do_work
+
+
 # sydw('select stat_time, company_id, kwh from elec_company_15min_2016 order by stat_time DESC, company_id limit 50;')
 # mdt_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:meterdataxbxb'])
 
@@ -129,7 +130,7 @@ def plot_company_line(res, fold=3, line_option='', fee = False, ori = False, sho
     return len(res)
 
 
-def r_set_keys(kv_lst, time_out=300, r_pool=r_webpage_pool):
+def r_set_lst_keys(kv_lst, time_out=300, r_pool=r_webpage_pool):
     r = r_pool.get_cursor()
     for pair in kv_lst:
         try:
@@ -140,39 +141,12 @@ def r_set_keys(kv_lst, time_out=300, r_pool=r_webpage_pool):
     return True
 
 
-def tree_to_one_v0(a, b, c, yita = 0.5, ratio=0.75, positive=True):
+def tree_to_one(a, b, c, ex = 0.618, positive=True):
+    # print('ex is %s' % ex)
     ab = float(b) - a
     bc = c - float(b)
-    cd = bc * (1 + yita) - ab * yita
-    d1 = c + cd
-    d2 = c
-    if  (d1 * ratio + d2 * (1  - ratio)) < 0 and positive:
-        return 0
-    else:
-        return (d1 * ratio + d2 * (1 - ratio))
-
-
-def tree_to_one_v2(a, b, c, yi=0, ex = 0.618, positive=True):
-    # TODO: 1, should test another funtion, and weighted minimum diff method.
-    # TODO: 2, the point should not start from center, but right.
-    ab = float(b) - a
-    bc = c - float(b)
-    delta = bc - ab
-    # TODO: not right here.s
-    cd = (bc + delta * yi) * ex
-    d1 = cd * 2 + (a + b + c) / 3
-    if  d1 < 0 and positive:
-        return 0
-    else:
-        return d1
-
-
-def tree_to_one(a, b, c, yi=0, ex = 0.618, positive=True):
-    print('ex is %s' % ex)
-    ab = float(b) - a
-    bc = c - float(b)
-    delta = bc - ab
-    cd = (bc + delta * yi) * ex
+    delta = (bc - ab)
+    cd = (bc ) * ex
     d1 = cd + c
     if  d1 < 0 and positive:
         return 0
@@ -180,24 +154,9 @@ def tree_to_one(a, b, c, yi=0, ex = 0.618, positive=True):
         return d1
 
 
-def test_tree_to_one_v2(lst=[1,1,4], n=10, yi=0, ex = 0.618):
-    a, b, c = lst
-    for i in range(n):
-        d = tree_to_one(a, b, c, yi, ex)
-        a = b
-        b = c
-        c = d
-        lst.append(d)
-    from matplotlib import pyplot as plt
-    xs = [i for i in range(n + 3)]
-    plt.plot(xs, lst)
-    plt.show()
-    return lst
-
-
-def test_tree_to_one(comp=2, n = 96, yi = 0.0, ex=0.618, do_plot = True):
+def test_tree_to_one(comp=2, n = 96,  ex=0.618, do_plot = True):
     ys = get_15m_last_n(comp, n)
-    zs = [int(i[2]) for i in ys]
+    zs = [int(i[1]) for i in ys]
     xs = []
     ps = []
     n = 0
@@ -207,7 +166,7 @@ def test_tree_to_one(comp=2, n = 96, yi = 0.0, ex=0.618, do_plot = True):
         b = c
         c = d
         d = z
-        p = z if n<3 else tree_to_one(a, b, c, yi = yi, ex=ex)
+        p = z if n<3 else tree_to_one(a, b, c, ex=ex)
         ps += [p]
         xs += [n]
         n += 1
@@ -216,49 +175,38 @@ def test_tree_to_one(comp=2, n = 96, yi = 0.0, ex=0.618, do_plot = True):
         plt.plot(xs, zs, color = 'r')
         plt.plot(xs, ps)
         plt.show()
-    return [zs, ps]
+    zps = [zs, ps]
+    resi = sum([abs(i - j) for i, j in zip(zps[0], zps[1])])
+    print(ex, resi)
+    return zps
 
 
-def residule(comp=2, n = 96, yi = -0.5, ex = 0.618 ):
-    zps = test_tree_to_one(comp, n, yi, ex, do_plot = False)
+def residule(comp=2, n = 96,  ex = 0.618 ):
+    zps = test_tree_to_one(comp, n, ex, do_plot = False)
     resi = sum([abs(i - j) for i, j in zip(zps[0], zps[1])])
     return resi
 
 
-def resi_vs_ex(comp=2, n = 96, yi = 0.0):
-    # yi = 00
+def resi_vs_ex(comp=2, n = 96):
     # comp2: 0.4,
     xs = []
     rs = []
     for i in range(100):
-        r = residule(comp=comp, n=n, yi=yi, ex = i * 0.01)
+        r = residule(comp=comp, n=n, ex = i * 0.01)
         rs.append(r)
         xs.append(i)
     plt.plot(xs, rs)
     plt.show()
     xr = zip(xs, rs)
     xrs = sorted(xr, key = lambda d: d[1])
-    print(xrs[0])
+    # print(xrs[0])
     return xrs[0]
-
-
-def resi_vs_yi(comp=2, n = 96, ex = 0.618):
-    # 0.57
-    xs = []
-    rs = []
-    for i in range(100):
-        r = residule(comp=comp, n=n, ex = ex, yi = (i * 0.02 -1))
-        rs.append(r)
-        xs.append(i * 0.02 -1)
-    plt.plot(xs, rs)
-    plt.show()
-    return [xs, rs]
 
 
 # example
 r_k = 'web_eemsyd_company_12_kwh/2016-12-23_171500:'
 
-def pred_forward(last_recds,kwh_sum,sec=1500,pred_d={},app_type='eemsyd',comp_id='company_2',fake_now='', **para_d):
+def pred_forward(last_recds,kwh_sum,sec=1200,pred_d={},app_type='eemsyd',comp_id='company_2',fake_now='', **para_d):
     """use power prediction. last_recds should have time-value pair.
     last_recds is 3 records, kwh_sum is the sum.
     """
@@ -286,28 +234,31 @@ def pred_forward(last_recds,kwh_sum,sec=1500,pred_d={},app_type='eemsyd',comp_id
     t_int_pred_start = int_fo_s(t_now) + 3
     # delay of 3 s.
     t_pred_start = s_fo_int(t_int_pred_start)
-    kwh_now =  kwh_sum[1] if not pk(t_pred_start) in pred_d else pred_d[pk(t_pred_start)]
-    # if pk(t_pred_start) in pred_d:
-    #     print('it is found in the pred_d')
+    kwh_now = kwh_sum[1] if not pk(t_pred_start) in pred_d else pred_d[pk(t_pred_start)]
     diff_sum = int(kwh_sum[1]) - kwh_now
     p_diff = (diff_sum / float(3.0)) / 900
     # fix third of the difference.
     # p = p_next +  p_delta
-    print(last_kwh, p_last, next_kwh, p_next, p_diff)
+    print("last_kwh: %s, p_last:%s, next_kwh:%s, p_next:%s, p_diff:%s, p_delta:%s" % (last_kwh, p_last, next_kwh, p_next, p_diff, p_delta))
     for i in range(int(int_fo_s(t_rcds_end) + sec - t_int_pred_start)) :
         t_c = t_int_pred_start + i
-        add = i * p_delta * 2 / float(900) + p_diff + p_last
-        add = 0 if add < 0 else add
+        add = (i + t_int_pred_start - int_fo_s(t_rcds_end)) * p_delta * 2 / float(900) + p_diff + p_last
+        addx = (abs(add) + add) / float(2)
+        if addx == 0:
+            print('addx 0')
         # this will never be nagitive
-        kwh_now += add
+        kwh_now += addx
         pred_d[pk(s_fo_int(t_c))] = kwh_now
     return pred_d
 
+
 def main():
-    for i in range(27):
-        bk = plot_company_line(sydw(mksql_last_15_min(comp=i + 1, point=360*96)), show=False, pic_name='/home/lcg/Pictures/eems/yd_copany_history_%s.jpeg' % (i+1))
-        print(i+1, bk)
-    pass
+    import sys
+    args = sys.argv
+    n = 0
+    while n < len(args):
+        n += 1
+
 
 if __name__ == '__main__':
     main()
