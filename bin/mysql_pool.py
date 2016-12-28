@@ -37,8 +37,9 @@ class MySQLdb_pool(object):
 
     def fillConnection(self,conn):
         try:
-            self._pool.put(conn)
-            self.cnx_now += 1
+            if self.cnx_now < self.cnx_num:
+                self._pool.put(conn)
+                self.cnx_now += 1
         except:
             print('can not put conn back to queue. ')
             print(str(sys.exc_info()))
