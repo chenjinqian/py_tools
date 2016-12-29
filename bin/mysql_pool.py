@@ -59,7 +59,7 @@ class MySQLdb_pool(object):
 
     def getConnection(self):
         try:
-            if self.cnx_now < 2:
+            if self.cnx_now < 1:
                 conn = self.CreateConnection()
             else:
                 conn = self._pool.get()
