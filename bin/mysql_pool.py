@@ -115,9 +115,13 @@ class MySQLWrapper(object):
     def do_work(self, q):
         con = self.pool.getConnection()
         try:
-            c = con.cursor()
-            c.execute(q)
-            res = c.fetchall()
+            if con and con.open:
+                res = -1
+                print("None connection type. ")
+            else:
+                c = con.cursor()
+                c.execute(q)
+                res = c.fetchall()
             # # should I add this line? will be much longer.
             # c.close()
             self.pool.returnConnection(con)
