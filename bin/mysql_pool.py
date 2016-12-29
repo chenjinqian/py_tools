@@ -60,19 +60,17 @@ class MySQLdb_pool(object):
     def getConnection(self):
         try:
             if self.cnx_now < 1:
-                conn = self.CreateConnection()
+                conn = None
+                # will be replaced by new created one next.
             else:
                 conn = self._pool.get()
                 self.cnx_now -= 1
             # conn.ping()
-            try:
-                if not (conn and conn.open):
-                    print('pop a broken conn, replace it to valid conn at the out gateway...')
+            if not (conn and conn.open):
+                print('pop a broken conn, replace it to valid conn at the out gateway...')
                 return self.CreateConnection()
-            except:
-                print('except at out gatway, replacing conn')
-                print(str(sys.exc_info()))
-                return self.CreateConnection()
+            else:
+                return conn
         except:
             print("error in get connection and creat usefull connection.")
             print(str(sys.exc_info()))
@@ -115,7 +113,7 @@ class MySQLWrapper(object):
     def do_work(self, q):
         con = self.pool.getConnection()
         try:
-            if con and con.open:
+            if not (con and con.open):
                 res = -1
                 print("None connection type. ")
             else:
