@@ -18,7 +18,7 @@ import MySQLdb
 
 class MySQLdb_pool(object):
     # create connect instance
-    def __init__(self, host='127.0.0.1', db='mysql', user='mysql', cnx_num=5, **conndict):
+    def __init__(self, host='127.0.0.1', db='mysql', user='mysql', cnx_num=5, delay=True, **conndict):
         self.host = host
         self.db=db
         self.user=user
@@ -26,11 +26,15 @@ class MySQLdb_pool(object):
         from Queue import Queue
         self._pool = Queue(cnx_num) # create the queue
         self.cnx_num=cnx_num
+        self.delay = delay
         self.cnx_now=0
         # create given amount of connection and add into queue.
         try:
             for i in range(cnx_num):
-                self.fillConnection(self.CreateConnection())
+                if not self.delay:
+                    self.fillConnection(self.CreateConnection())
+                else:
+                    self.fillConnection(None)
         except:
             print('fail init create connection to db')
             raise
@@ -100,14 +104,15 @@ class MySQLdb_pool(object):
 
 class MySQLWrapper(object):
 
-    def __init__(self, host='127.0.0.1', user='mysql', db='5432', cnx_num=5, **dic):
+    def __init__(self, host='127.0.0.1', user='mysql', db='5432', cnx_num=5, delay=True, **dic):
+        self.delay = delay
         self.host = host
         self.db=db
         self.user=user
         # self.dic=dic
         self.cnx_num = cnx_num
         # print('dic',dic)
-        self.pool = MySQLdb_pool(host = self.host, db = self.db, user = self.user, cnx_num = self.cnx_num, **dic)
+        self.pool = MySQLdb_pool(host = self.host, db = self.db, user = self.user, cnx_num = self.cnx_num, delay=self.delay, **dic)
 
 
     def do_work(self, q):
