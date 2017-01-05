@@ -11,21 +11,43 @@ import scipy as sp
 
 import time, os, sys
 
-dbini = read_config.ReadConfig_DB('../config/db.ini')
-dbini_d = dbini.check_config(db_type='mysql', convert_port=True)
+# dbini = read_config.ReadConfig_DB('../config/db.ini')
+# dbini_d = dbini.check_config(db_type='mysql', convert_port=True)
+# r_webpage_pool = redis_pool.RedisWrapper(**dbini_d['redis:webpage'])
+# r = r_webpage_pool.get_cursor()
+# sop_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemsop'])
+# sopw = sop_pool.do_work
+# sec_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemssec'])
+# secw = sec_pool.do_work
+# syd_pool = mysql_pool.MySQLWrapper(cnx_num=2,**dbini_d['mysql:app_eemsyd'])
+# sydw = syd_pool.do_work
+# scr_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemscr'])
+# scrw = syd_pool.do_work
 
-r_webpage_pool = redis_pool.RedisWrapper(**dbini_d['redis:webpage'])
-r = r_webpage_pool.get_cursor()
+def mk_mp_d(ini='../config/db.ini', mark='mysql:'):
+    """read config files, and make mysql connection pool instance as dict."""
+    cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+    db_lst = [i for i in cfgd.keys() if mark in i]
+    pol_d = {}
+    pol_worker = {}
+    for db in db_lst:
+        pol_d[db] = mpol.MySQLWrapper(**cfgd[db])
+        pol_worker[db] = mpol.MySQLWrapper(**cfgd[db]).do_work
+    return [pol_d, pol_worker]
 
-sop_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemsop'])
-sopw = sop_pool.do_work
 
-sec_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemssec'])
-secw = sec_pool.do_work
-syd_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemsyd'])
-sydw = syd_pool.do_work
-scr_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemscr'])
-scrw = syd_pool.do_work
+def mk_rp_d(ini='../config/db.ini', mark='redis:'):
+    cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+    db_lst = [i for i in cfgd.keys() if mark in i]
+    pol_d = {}
+    for db in db_lst:
+        pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor()
+    return pol_d
+
+
+# use dictory for global database connection pool instance.
+my_pol_d, my_pol_w = mk_mp_d()
+rd_pol_c = mk_rp_d()
 
 
 # sydw('select stat_time, company_id, kwh from elec_company_15min_2016 order by stat_time DESC, company_id limit 50;')
@@ -66,9 +88,9 @@ def mksql_today_sum(comp='2', table='', time_start='', time_end=''):
     time_start = '' or fm_tm(fm = '%Y-%m-%d 00:00:00')
     time_end = ''  or  fm_tm()
     sql = 'select max(stat_time), sum(kwh) from \
-    (select * from elec_company_15min_2016 where company_id = %s  and stat_time > "%s" \
+    (select * from elec_company_15min_%s where company_id = %s  and stat_time > "%s" \
     and stat_time < "%s" order by stat_time ) t order by stat_time;' \
-    % (comp, time_start, time_end)
+    % (time.strftime('%Y', time.localtime()), comp, time_start, time_end)
     return sql
 
 
@@ -80,10 +102,10 @@ def get_15m_last_n(comp, point=3, table='', worker=syd_pool):
     return res
 
 
-def get_sum_today(comp, worker=syd_pool, time_start='', time_end='', table=''):
+def get_sum_today(comp, table='', worker=syd_pool, time_start='', time_end=''):
     # sql_example = 'select * from elec_company_15min_2016 where company_id = 12 order by stat_time desc limit 5;'
     # sql = 'select * from %s where company_id=%s order by %s desc limit %s;' % (table_name, company_id, order_by, n)
-    sql = mksql_today_sum(comp, point, table)
+    sql = mksql_today_sum(comp, table, time_start=time_start, time_end=time_end)
     res = worker.do_work(sql)
     return res
 
@@ -130,15 +152,20 @@ def plot_company_line(res, fold=3, line_option='', fee = False, ori = False, sho
     return len(res)
 
 
-def r_set_lst_keys(kv_lst, time_out=300, r_pool=r_webpage_pool):
+def r_set_lst_keys(kv_lst, time_out=1200, r_pool=r_webpage_pool):
     r = r_pool.get_cursor()
-    for pair in kv_lst:
+    if type(kv_lst) == dict:
+        kv_lst_sorted = sorted(kv_lst.items())
+    else:
+        kv_lst_sorted = sorted(kv_lst)
+        # sort by time stamp, near ones first.
+    for pair in kv_lst_sorted:
         try:
             k, v = pair
-            set(k, v, ex=int(time_out))
+            r.setkey(k, v, ex=int(time_out))
         except:
             continue
-    return True
+    return kv_lst_sorted[-1]
 
 
 def tree_to_one(a, b, c, ex = 0.618, positive=True):
@@ -204,11 +231,11 @@ def resi_vs_ex(comp=2, n = 96):
 
 
 # example
-r_k = 'web_eemsyd_company_12_kwh/2016-12-23_171500:'
+r_k_example = 'web_eemsyd_company_12_kwh/2016-12-23_171500:'
 
-def pred_forward(last_recds,kwh_sum,sec=1200,pred_d={},app_type='eemsyd',comp_id='company_2',fake_now='', **para_d):
-    """use power prediction. last_recds should have time-value pair.
-    last_recds is 3 records, kwh_sum is the sum.
+def pred_forward(last_rcds,kwh_sum,sec=1200,pred_d={},app_type='eemsyd',comp_id='company_2',fake_now='', **para_d):
+    """use power prediction. last_rcds should have time-value pair.
+    last_rcds is 3 records, kwh_sum is the sum.
     """
     import time
     def int_fo_s(s):
@@ -217,16 +244,17 @@ def pred_forward(last_recds,kwh_sum,sec=1200,pred_d={},app_type='eemsyd',comp_id
         return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(i))
     def pk(s):
         return 'web_%s_%s_kwh/%s' % (app_type, comp_id, s)
-    if len(last_recds) == 3 and (int_fo_s(str(last_recds[2][0])) - int_fo_s(str(last_recds[0][0]))) == 1800:
-        next_kwh = tree_to_one(*[i[1] for i in last_recds][-3:], **para_d)
+    if len(last_rcds) == 3 and (int_fo_s(str(last_rcds[2][0])) - int_fo_s(str(last_rcds[0][0]))) == 1800:
+        next_kwh = tree_to_one(*[i[1] for i in last_rcds][-3:], **para_d)
         p_next = next_kwh / float(900)
     else:
-        next_kwh = last_recds[-1][1]
+        next_kwh = last_rcds[-1][1]
         p_next = next_kwh / float(900)
-    last_kwh = last_recds[-1][1]
+    last_kwh = last_rcds[-1][1]
     p_last = last_kwh / float(900)
     p_delta = p_next - p_last
-    t_rcds_end = str(last_recds[-1][0])
+    t_rcds_end = str(last_rcds[-1][0])
+    t_int_rcds_end = int_fo_s(t_rcds_end)
     if not pred_d:
         pred_d = {}
         # here have to use a new dict.
@@ -234,30 +262,34 @@ def pred_forward(last_recds,kwh_sum,sec=1200,pred_d={},app_type='eemsyd',comp_id
     t_int_pred_start = int_fo_s(t_now) + 3
     # delay of 3 s.
     t_pred_start = s_fo_int(t_int_pred_start)
-    kwh_now = kwh_sum[1] if not pk(t_pred_start) in pred_d else pred_d[pk(t_pred_start)]
-    diff_sum = int(kwh_sum[1]) - kwh_now
-    p_diff = (diff_sum / float(3.0)) / 900
+    last_pred_sum = kwh_sum[0][1] if not pk(t_rcds_end) in pred_d else pred_d[pk(t_rcds_end)]
+    now_pred_sum = (kwh_sum[0][1] + (t_int_pred_start - t_int_rcds_end) * p_last) if not pk(t_pred_start) in pred_d else pred_d[pk(t_pred_start)]
+    diff_sum = int(kwh_sum[0][1]) - last_pred_sum
+    p_diff_sum = (diff_sum / float(3.0)) / 900
     # fix third of the difference.
     # p = p_next +  p_delta
-    print("last_kwh: %s, p_last:%s, next_kwh:%s, p_next:%s, p_diff:%s, p_delta:%s" % (last_kwh, p_last, next_kwh, p_next, p_diff, p_delta))
+    print("last_kwh: %s, p_last:%s, next_kwh:%s, p_next:%s, p_diff_sum:%s, p_delta:%s" % (last_kwh, p_last, next_kwh, p_next, p_diff_sum, p_delta))
     for i in range(int(int_fo_s(t_rcds_end) + sec - t_int_pred_start)) :
         t_c = t_int_pred_start + i
-        add = (i + t_int_pred_start - int_fo_s(t_rcds_end)) * p_delta * 2 / float(900) + p_diff + p_last
+        add = (i + t_int_pred_start - t_int_rcds_end) * p_delta * 2 / float(900) + p_diff_sum + p_last
         addx = (abs(add) + add) / float(2)
-        if addx == 0:
-            print('addx 0')
+        # if addx == 0:
+        #     print('addx 0')
         # this will never be nagitive
-        kwh_now += addx
-        pred_d[pk(s_fo_int(t_c))] = kwh_now
+        now_pred_sum += addx
+        pred_d[pk(s_fo_int(t_c))] = now_pred_sum
     return pred_d
 
 
-def main():
+def pred_():
     import sys
     args = sys.argv
     n = 0
-    while n < len(args):
-        n += 1
+    for arg in args:
+        import re
+        if re.match('^--?(\w*)', arg):
+            va = ''
+        print(arg)
 
 
 if __name__ == '__main__':
