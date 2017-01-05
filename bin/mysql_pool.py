@@ -115,7 +115,7 @@ class MySQLWrapper(object):
         self.pool = MySQLdb_pool(host = self.host, db = self.db, user = self.user, cnx_num = self.cnx_num, delay=self.delay, **dic)
 
 
-    def do_work(self, q):
+    def do_work(self, q, commit=False):
         con = self.pool.getConnection()
         try:
             if not (con and con.open):
@@ -125,6 +125,8 @@ class MySQLWrapper(object):
                 c = con.cursor()
                 c.execute(q)
                 res = c.fetchall()
+                if commit:
+                    con.commit()
             # # should I add this line? will be much longer.
             # c.close()
             self.pool.returnConnection(con)
