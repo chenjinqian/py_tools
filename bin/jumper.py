@@ -46,6 +46,7 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
 
 
 # use dictory for global database connection pool instance.
+cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
 my_pol_d, my_pol_w = mk_mp_d()
 rd_pol_c = mk_rp_d()
 
