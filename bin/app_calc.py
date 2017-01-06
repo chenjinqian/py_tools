@@ -54,22 +54,23 @@ tp4 = tread_pol(4)
 def calc_meter_acc(mid=1, time_ckp=0, ha=None):
     """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
     v_near = get_near_keys(mid, time_ckp)
-    a = interv(v_near) or ha
+    a = kwh_interval(v_near) or ha
     return a
 
 
-def get_near_keys(mid, ckp_shift, interval=900):
+def get_near_keys(mid, ckp_shift, interval=900, full_values=False):
     """redis keys is like r.hget('meterdata_35545_20170106_1600', '20170106_160015')"""
     r = redis_cursors_d['redis:meter']
     def ts_ckp_int(i):
         # TODO: Here, weird int section problem.
-        s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time()-(time.time() % interval) + i))
-        if not s[-1] == '0':
-            s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time()-(time.time() % interval) + i + 1))
-            if not s[-1] == '0':
-                s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time()-(time.time() % interval) + i - 1))
+        s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + i))
+        # # here, have to use int, to avoid int truncate problem.
+        # if not s[-1] == '0':
+        #     s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time()-(time.time() % interval) + i + 1))
+        #     if not s[-1] == '0':
+        #         s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time()-(time.time() % interval) + i - 1))
         return s
-    def time_lst(ckp_shift, left=True):
+    def time_lst(ckp_shift, left=True, one_key=True):
         import time
         rst = []
         if left:
@@ -77,31 +78,75 @@ def get_near_keys(mid, ckp_shift, interval=900):
             for i in range(interval):
                 ts_k2 = ts_ckp_int(- i - ckp_shift)
                 rst.append([ts_k1, ts_k2])
+                if one_key:
+                    break
             return rst
         else:
             ts_k1 = ts_ckp_int(-ckp_shift)[:-2]
             for i in range(interval):
                 ts_k2 = ts_ckp_int(i - ckp_shift)
                 rst.append([ts_k1, ts_k2])
+                if one_key:
+                    break
             return rst
     keys_left = time_lst(ckp_shift)
     keys_right = time_lst(ckp_shift, left=False)
-    left_value = None
-    left_time = None
-    right_value = None
-    right_time = None
+    lk1, lk2 = keys_left[0]
+    rk1, rk2 = keys_right[0]
+    left_keys = sorted(r.hkeys('meterdata_%s_%s' % (mid, lk1)))
+    if not left_keys:
+        left_key = None
+    else:
+        left_key = left_keys[-1]
+    left_value = r.hget('meterdata_%s_%s' % (mid, lk1), left_key)
+    left_values = r.hgetall('meterdata_%s_%s' % (mid, lk1))
+    right_keys = sorted(r.hkeys('meterdata_%s_%s' % (mid, rk1)))
+    if not right_keys:
+        right_key = None
+    else:
+        right_key = right_keys[0]
+    right_value = r.hget('meterdata_%s_%s' % (mid, rk1), right_key)
+    right_values = r.hgetall('meterdata_%s_%s' % (mid, rk1))
     # TODO: use keys in redis cursor, get values in four time.
-    for k1, k2 in keys_left:
-        left_value = r.hget('meterdata_%s_%s' % (mid, k1), k2)
-        left_time = k2
-        if left_value:
-            break
-    for k1, k2 in keys_right:
-        right_value = r.hget('meterdata_%s_%s' % (mid, k1), k2)
-        right_time = k2
-        if right_value:
-            break
-    return [left_itme, left_value, right_time, right_value]
+    # chose value nearist in time, but not far than 900s.
+    res_d = {}
+    if full_values:
+        return [left_values, right_values]
+    if left_key:
+        res_d[left_key] = left_value
+    if right_key:
+        res_d[right_key] = right_value
+    return res_d
+
+
+def kwh_interval(d, interval=900):
+    ks = d.keys()
+    rst1 = []
+    rst2 = []
+    for k in ks:
+        val = d[k]
+        time_int = int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
+        lst = val.split(',')
+        kwhttli_lst = [float(i.split('=')[1]) for i in lst if 'kwhttli=' in i]
+        kwhttle_lst = [float(i.split('=')[1]) for i in lst if 'kwhttle=' in i]
+        rst1 += [time_int, kwhttli_lst[0]]
+        rst2 += [time_int, kwhttle_lst[0]]
+        # ['20170106_212459',
+        #  [['kwhttle', '0.0'], ['kwhttli', '27.32']],
+        #  '20170106_213115',
+        #  [['kwhttle', '0.0'], ['kwhttli', '27.35']]]
+    def iv(lst):
+        x1, y1, x2, y2 = lst
+        x0 = x2 - x2 % interval
+        rt = y1  + (y2 - y1) * (x0 - x1) / float(x2 - x1)
+        return rt
+    if rst1 and rst2:
+        kwhttli_0 = iv(rst1)
+        kwhttle_0 = iv(rst2)
+        return [kwhttli_0, kwhttle_0]
+    else:
+        return None
+
 
 
 
