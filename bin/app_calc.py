@@ -90,6 +90,7 @@ def get_near_keys(mid, ckp_shift, interval=900):
     left_time = None
     right_value = None
     right_time = None
+    # TODO: use keys in redis cursor, get values in four time.
     for k1, k2 in keys_left:
         left_value = r.hget('meterdata_%s_%s' % (mid, k1), k2)
         left_time = k2
