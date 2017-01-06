@@ -148,6 +148,12 @@ def kwh_interval(d, interval=900):
         return None
 
 
+def get_comp_mid(cid, app='mysql:app_eemsyd'):
+    worker = mysql_workers_d[app]
+    sql = 'select related_gmids from company where id=%s;' % (cid)
+    rst = worker(sql)
+    return [int(i) for i in rst[0][0].split(',')[1:-1]]
+
 
 
 def how_sleep(shift=180, interval=900, real_sleep=True):
