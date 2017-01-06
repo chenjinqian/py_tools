@@ -148,11 +148,15 @@ def kwh_interval(d, interval=900):
         return None
 
 
-def get_comp_mid(cid, app='mysql:app_eemsyd'):
+def get_comp_mid(cid, app='mysql:app_eemsyd', comp='company'):
     worker = mysql_workers_d[app]
-    sql = 'select related_gmids from company where id=%s;' % (cid)
+    sql = 'select related_gmids from %s where id=%s;' % (comp, cid)
     rst = worker(sql)
-    return [int(i) for i in rst[0][0].split(',')[1:-1]]
+    if rst:
+        mids = rst[0][0].split(',')
+    else:
+        mids = []
+    return [int(i) for i in mids if i]
 
 
 
