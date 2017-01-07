@@ -44,31 +44,20 @@ from multiprocessing.dummy import Pool as tread_pol
 tp4 = tread_pol(4)
 
 
-# def test_func_prop():
-#     print(my_pol_d['mysql:app_eemsyd'].pool.cnx_now)
-#     con1 = my_pol_d['mysql:app_eemsyd'].pool.getConnection()
-#     print(my_pol_d['mysql:app_eemsyd'].pool.cnx_now)
-#     return con1
-
-
 def calc_meter_acc(mid=1, time_ckp=0, ha=None):
-    """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
-    v_near = get_near_keys(mid, time_ckp)
-    a = kwh_interval(v_near) or ha
+    # """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
+    v_left, v_near, v_right = get_near_keys(mid, time_ckp)
+    a_ttli = kwh_interval(v_near, v='ttli') or ha_ttli
+    # TODO: return a list.
     return a
 
 
-def get_near_keys(mid, ckp_shift, interval=900, full_values=False):
+def get_near_keys(mid, ckp_shift, interval=900):
     """redis keys is like r.hget('meterdata_35545_20170106_1600', '20170106_160015')"""
     r = redis_cursors_d['redis:meter']
     def ts_ckp_int(i):
         # TODO: Here, weird int section problem.
         s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + i))
-        # # here, have to use int, to avoid int truncate problem.
-        # if not s[-1] == '0':
-        #     s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time()-(time.time() % interval) + i + 1))
-        #     if not s[-1] == '0':
-        #         s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(time.time()-(time.time() % interval) + i - 1))
         return s
     def time_lst(ckp_shift, left=True, one_key=True):
         import time
@@ -110,16 +99,16 @@ def get_near_keys(mid, ckp_shift, interval=900, full_values=False):
     # TODO: use keys in redis cursor, get values in four time.
     # chose value nearist in time, but not far than 900s.
     res_d = {}
-    if full_values:
-        return [left_values, right_values]
     if left_key:
         res_d[left_key] = left_value
     if right_key:
         res_d[right_key] = right_value
-    return res_d
+    else:
+        return [left_values, res_d, right_values]
 
 
-def kwh_interval(d, interval=900):
+def kwh_interval(d, interval=900, v='ttli'):
+    """d is like {time_a:value_a, time_b:value_b}"""
     ks = d.keys()
     rst1 = []
     rst2 = []
@@ -129,23 +118,29 @@ def kwh_interval(d, interval=900):
         lst = val.split(',')
         kwhttli_lst = [float(i.split('=')[1]) for i in lst if 'kwhttli=' in i]
         kwhttle_lst = [float(i.split('=')[1]) for i in lst if 'kwhttle=' in i]
-        rst1 += [time_int, kwhttli_lst[0]]
-        rst2 += [time_int, kwhttle_lst[0]]
-        # ['20170106_212459',
-        #  [['kwhttle', '0.0'], ['kwhttli', '27.32']],
-        #  '20170106_213115',
-        #  [['kwhttle', '0.0'], ['kwhttli', '27.35']]]
+        pttli_lst = [float(i.split('=')[1]) for i in lst if 'pttli=' in i]
+        if kwhttli_lst:
+            rst1 += [time_int, kwhttli_lst[0]]
+        if kwhttle_lst:
+            rst2 += [time_int, kwhttle_lst[0]]
     def iv(lst):
         x1, y1, x2, y2 = lst
         x0 = x2 - x2 % interval
         rt = y1  + (y2 - y1) * (x0 - x1) / float(x2 - x1)
         return rt
-    if rst1 and rst2:
+    if rst1:
         kwhttli_0 = iv(rst1)
+        if v == 'ttli':
+            return kwhttli_0
+    if rst2:
         kwhttle_0 = iv(rst2)
-        return [kwhttli_0, kwhttle_0]
-    else:
-        return None
+        if not v == 'ttli':
+            return kwhttle_0
+    return None
+
+
+
+# qrey_charge(company_id, '2017-01-01 14:30:00', {'company_id':n, 'kwhttli':a, 'pttli':q})
 
 
 def get_comp_mid(cid, app='mysql:app_eemsyd', comp='company'):
