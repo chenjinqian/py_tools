@@ -30,7 +30,7 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
     db_lst = [i for i in cfgd.keys() if mark in i]
     pol_d = {}
     for db in db_lst:
-        pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor()
+        pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor
     return pol_d
 
 
@@ -54,21 +54,41 @@ rsrv_default = 'redis:meter'
 
 def one_comp(cid, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default):
     # TODO: pttl unit is hour.
+    import time
+    t_s = time.time()
     his_d = {}
     ic_sum = []
     mids = get_comp_mid(cid, app=app, comp=comp)
     tp = tread_pol(len(mids))
-    for t in ckps:
-        for mid in mids:
-            # print(t, mid)
-            if  not str(str(t) +'_'+ str(mid)) in his_d:
-                ic0, hi0 = calc_meter_acc(mid, t + interval, vrs_s=vrs_s_default)
-                # print(hi0)
-                his_d[str(t) +'_'+ str(mid)] = hi0
-            ic, hi = calc_meter_acc(mid, t, history=his_d[str(t) + '_' + str(mid)], vrs_s=vrs_s_default)
-            # print(ic, hi)
-            his_d[str(t) +'_'+ str(mid)] = hi
-            ic_sum.append(ic)
+
+    def thread_one(mids, t):
+        if  not str(str(t) +'_'+ str(mid)) in his_d:
+            ic0, hi0 = calc_meter_acc(mid, t + interval, vrs_s=vrs_s)
+            # print(hi0)
+            his_d[str(t) +'_'+ str(mid)] = hi0
+        ic, hi = calc_meter_acc(mid, t, history=his_d[str(t) + '_' + str(mid)], vrs_s=vrs_s)
+        # print(ic, hi)
+        his_d[str(t) +'_'+ str(mid)] = hi
+        return ic
+
+    def t_acc(lst):
+        return thread_one(*lst)
+
+    ic_sum = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
+    # tp.join()
+
+    # for t in ckps:
+    #     for mid in mids:
+    #         # print(t, mid)
+    #         if  not str(str(t) +'_'+ str(mid)) in his_d:
+    #             ic0, hi0 = calc_meter_acc(mid, t + interval, vrs_s=vrs_s)
+    #             # print(hi0)
+    #             his_d[str(t) +'_'+ str(mid)] = hi0
+    #         ic, hi = calc_meter_acc(mid, t, history=his_d[str(t) + '_' + str(mid)], vrs_s=vrs_s)
+    #         # print(ic, hi)
+    #         his_d[str(t) +'_'+ str(mid)] = hi
+    #         ic_sum.append(ic)
+    print(time.time() - t_s)
     return ic_sum
 
 
@@ -116,12 +136,16 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
         # # use new checkpoint time_string, cause history can be inhere
         ti_value_all = int_hst + int_v_left + int_ckp
         v_sum = float(0)
+        def po(n):
+            return (abs(n) + n) / float(2)
+        def ne(n):
+            return (n - abs(n)) / float(2)
         for i in zip(ti_value_all[:-1], ti_value_all[1:]):
             [x1, y1], [x2, y2] = i
             if  s=='n':
-                acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
+                acc = 0.0 if (y1 is None or y2 is None) else ne(y1 + y2)*(x2 - x1) / float(2)
             elif s == 'p':
-                acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
+                acc = 0.0 if (y1 is None or y2 is None) else po(y1 + y2)*(x2 - x1) / float(2)
             else:
                 acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
             # print(acc, x1, y1, x2, y2)
@@ -133,7 +157,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
             y1f = float(y1)
             y2f = float(y2)
         except:
-            print('y1, y2 not str %s, %s, and vrs is %s' % (y1, y2, vr))
+            print('y1, y2 str, vrs is %s' % (vr))
             return None
         return ((y2f - y1f) + abs(y2f - y1f))/ float(2.0)
 
@@ -175,7 +199,7 @@ s1 = 'kvarhb3=0.0,kvarhb2=0.0,kvarhb1=0.0,kvarhb4=0.0,harm2ua=0.0,harm2ub=0.0,ha
 
 def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter', left_null=False, right_null=True):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
-    r = redis_cursors_d[rsrv]
+    r = redis_cursors_d[rsrv]()
     def ts_ckp_int(i):
         # TODO: Here, weird int section problem.
         s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
