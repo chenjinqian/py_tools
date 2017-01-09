@@ -37,20 +37,40 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
 ### global variables ###
 # use dictory for global database connection pool instance.
 cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+ta = time.time()
 mysql_workers_d = mk_mp_d()
+t_s = time.time() - ta
+print(t_s)
 redis_cursors_d = mk_rp_d()
+t_s = time.time() - ta
+print(t_s)
 
 from multiprocessing.dummy import Pool as tread_pol
 tp4 = tread_pol(5)
 
-vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 1]]
-ckp_default = [0, 60*30, 60*60*3]
+vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2]]
+ckps_default = [0, 60*30, 60*60*3]
 rsrv_default = 'redis:meter'
 
-def one_comp(cid, app='mysql:app_eemsyd', comp='company', ckp=ckp_default, vrs_s=vrs_s_default, rsrv=rsrv_default):
-    mids = get_comp_mid(cid, app=app, comp=comp, ckp=ckp)
+def one_comp(cid, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default):
+    # TODO: pttl unit is hour.
+    his_d = {}
+    ic_sum = []
+    mids = get_comp_mid(cid, app=app, comp=comp)
+    tp = tread_pol(len(mids))
+    for t in ckps:
+        for mid in mids:
+            # print(t, mid)
+            if  not str(str(t) +'_'+ str(mid)) in his_d:
+                ic0, hi0 = calc_meter_acc(mid, t + interval, vrs_s=vrs_s_default)
+                # print(hi0)
+                his_d[str(t) +'_'+ str(mid)] = hi0
+            ic, hi = calc_meter_acc(mid, t, history=his_d[str(t) + '_' + str(mid)], vrs_s=vrs_s_default)
+            # print(ic, hi)
+            his_d[str(t) +'_'+ str(mid)] = hi
+            ic_sum.append(ic)
+    return ic_sum
 
-    return None
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default):
     # """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
@@ -78,21 +98,32 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
     def int_f_k(k):
         return int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
 
-    def sumup(hst, v_left, ckp, v_right, vr):
+    def sumup(hst, v_left, ckp, v_right, vr, s='p'):
+        """s = p/n/a, for positive, negative, as is."""
         if not v_left or not type(v_left)==dict:
+            return None
+        try:
+            hst_one = float(hst[1])
+            ckp_one = float(ckp[1])
+        except:
             return None
         left_keys = sorted(v_left.keys())
         # right_keys = sorted(v_right.keys())
         # int_v_right = [[int_f_k(k), float(v_right[k])] for k in right_keys]
         int_v_left = [[int_f_k(k), vr_parse2(v_left[k], vr)] for k in left_keys]
-        int_hst = [[int_f_k(ts_ckp[0]), float(hst[1])]]
-        int_ckp = [[int_f_k(ts_ckp[1]), float(ckp[1])]]
+        int_hst = [[int_f_k(ts_ckp[0]), hst_one]]
+        int_ckp = [[int_f_k(ts_ckp[1]), ckp_one]]
         # # use new checkpoint time_string, cause history can be inhere
         ti_value_all = int_hst + int_v_left + int_ckp
         v_sum = float(0)
         for i in zip(ti_value_all[:-1], ti_value_all[1:]):
             [x1, y1], [x2, y2] = i
-            acc = 0.0 if (not y1 or not y2) else (y1 + y2)*(x2 - x1) / float(2)
+            if  s=='n':
+                acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
+            elif s == 'p':
+                acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
+            else:
+                acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
             # print(acc, x1, y1, x2, y2)
             v_sum += acc
         return v_sum
@@ -102,6 +133,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
             y1f = float(y1)
             y2f = float(y2)
         except:
+            print('y1, y2 not str %s, %s, and vrs is %s' % (y1, y2, vr))
             return None
         return ((y2f - y1f) + abs(y2f - y1f))/ float(2.0)
 
@@ -111,8 +143,11 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
             incr.append([ts_ckp[0], pstv(ckp[1], hst[1])])
             # Notice: use leftside of the time section.
         elif vr[1] == 1:
-            incr.append([ts_ckp[0], sumup(hst, v_left, ckp, v_right, vr[0])])
+            incr.append([ts_ckp[0], sumup(hst, v_left, ckp, v_right, vr[0], 'a')])
+        elif vr[1] == 2:
+            incr.append([ts_ckp[0], [sumup(hst, v_left, ckp, v_right, vr[0], 'p'), sumup(hst, v_left, ckp, v_right, vr[0], 'n')]])
         else:
+            print('type interger not recongnized, should be 0 or 1, get %s' % vr[1])
             incr.append(None)
     return incr
 
@@ -138,7 +173,7 @@ s1 = 'kvarhb3=0.0,kvarhb2=0.0,kvarhb1=0.0,kvarhb4=0.0,harm2ua=0.0,harm2ub=0.0,ha
 #           ['pttle', 1]]
 #incr1 =  incr_sumup(history1, v_left1, ckp_values1, ts_ckp1, None, vrs_s1)
 
-def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter'):
+def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter', left_null=False, right_null=True):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
     r = redis_cursors_d[rsrv]
     def ts_ckp_int(i):
@@ -174,14 +209,20 @@ def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter'):
     else:
         left_key = left_keys[-1]
     left_value = r.hget('meterdata_%s_%s' % (mid, lk1), left_key)
-    left_values = r.hgetall('meterdata_%s_%s' % (mid, lk1))
+    if left_null:
+        left_values = None
+    else:
+        left_values = r.hgetall('meterdata_%s_%s' % (mid, lk1))
     right_keys = sorted(r.hkeys('meterdata_%s_%s' % (mid, rk1)))
     if not right_keys:
         right_key = None
     else:
         right_key = right_keys[0]
     right_value = r.hget('meterdata_%s_%s' % (mid, rk1), right_key)
-    right_values = r.hgetall('meterdata_%s_%s' % (mid, rk1))
+    if right_null:
+        right_values = None
+    else:
+        right_values = r.hgetall('meterdata_%s_%s' % (mid, rk1))
     # TODO: right keys is not used, could return none.
     # TODO: use keys in redis cursor, get values in four time.
     # chose value nearist in time, but not far than 900s.
@@ -291,8 +332,6 @@ def sql_op(ha, a, hb, b, cmpid='2017', app='eemsop', comp='company'):
 
 
 
-
-
 def f1(n, ct= 0, pr=False, *lst):
     # print(d1)
     ct += 1
@@ -308,8 +347,9 @@ def f1(n, ct= 0, pr=False, *lst):
 def f0(lst):
     return f1(*lst)
 
-tp4 = tread_pol(4)
-tr4 = tp4.map(f0, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
+# tp4 = tread_pol(4)
+# tr4 = tp4.map(f0, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
+
 # qrey_charge(company_id, '2017-01-01 14:30:00', {'company_id':n, 'kwhttli':a, 'pttli':q})
 
 def main():
