@@ -8,6 +8,7 @@
 import read_config as rcfg
 import redis_pool as rpol
 import mysql_pool as mpol
+import redis
 
 
 def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
@@ -30,36 +31,58 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
     db_lst = [i for i in cfgd.keys() if mark in i]
     pol_d = {}
     for db in db_lst:
-        pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor
+        # pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor
+        p = redis.ConnectionPool(**cfgd[db])
+        r = redis.Redis(connection_pool=p)
+        pol_d[db] = r
     return pol_d
 
 
 ### global variables ###
 # use dictory for global database connection pool instance.
-cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
-ta = time.time()
-mysql_workers_d = mk_mp_d()
-t_s = time.time() - ta
-print(t_s)
-redis_cursors_d = mk_rp_d()
-t_s = time.time() - ta
-print(t_s)
 
-from multiprocessing.dummy import Pool as tread_pol
-tp4 = tread_pol(5)
+cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+mysql_workers_d = mk_mp_d()
+redis_cursors_d = mk_rp_d()
+
+
+# from multiprocessing.dummy import Pool as tpol
+# tp4 = tpol(4)
+from gevent.pool import Pool as gpol
+from gevent import monkey
+monkey.patch_all()
+
+# from gevent import monkey
+# gp4 = gpol(4)
+# from multiprocessing import Pool as ppol
+# pp4 = ppol(4)
 
 vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2]]
 ckps_default = [0, 60*30, 60*60*3]
 rsrv_default = 'redis:meter'
 
-def one_comp(cid, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default):
+def test1(n=2, d={}):
+    a= 0
+    print(a, d)
+    if not a:
+        a = a + 2
+    if not d:
+        d['a'] = a
+    time.sleep(0.3)
+    if n < 0:
+        return a
+    return test1((n - 1), {})
+
+
+def one_comp(cid, mul=True, tp=gpol(2), app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default):
     # TODO: pttl unit is hour.
     import time
-    t_s = time.time()
     his_d = {}
     ic_sum = []
     mids = get_comp_mid(cid, app=app, comp=comp)
-    tp = tread_pol(len(mids))
+    # tp = tread_pol(len(mids) * len(ckps))
+    # tp = tread_pol(12)
+    # tp = gpol(12)
 
     def thread_one(mids, t):
         if  not str(str(t) +'_'+ str(mid)) in his_d:
@@ -74,9 +97,17 @@ def one_comp(cid, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, int
     def t_acc(lst):
         return thread_one(*lst)
 
-    ic_sum = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
+    t_s = time.time()
+    if mul:
+        ic_sum = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
+        # try:
+        #     tp.join()
+        # except Exception as e:
+        #     print(e)
+        print(time.time() - t_s)
+        print(his_d.keys())
+    return ic_sum
     # tp.join()
-
     # for t in ckps:
     #     for mid in mids:
     #         # print(t, mid)
@@ -88,14 +119,57 @@ def one_comp(cid, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, int
     #         # print(ic, hi)
     #         his_d[str(t) +'_'+ str(mid)] = hi
     #         ic_sum.append(ic)
-    print(time.time() - t_s)
-    return ic_sum
+    # print(time.time() - t_s)
+    # return ic_sum
+
+t_a = time.time()
+pa= get_mids_fee_policy(mids_all)
+# mids_all = get_mids_all()
+# poli_all = get_all_fee_policy()
+print(time.time() - t_a)
+
+
+def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+    mids = get_mids_all(rsrv=rsrv, lk1=lk1,raw=raw)
+    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw)
+
+
+def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+    r = redis_cursors_d[rsrv]
+    mids = r.hkeys('sync_meterinfo')
+    return mids
+
+
+def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+    def parse_pli(sss):
+        d = {}
+        ss = [s for s in sss.split(',') if s]
+        for s in ss:
+            try:
+                k, v = s.split('=')
+                d[k] = v
+            except:
+                print(s)
+                continue
+        return d
+    pli_d = {}
+    r = redis_cursors_d[rsrv]
+    p = r.pipeline(transaction=False)
+    for mid in  mids:
+        p.hget(lk1, mid)
+    fee_plis = p.execute()
+    for mid, pli in zip(mids, fee_plis):
+        pli_d[mid] = pli if raw else parse_pli(pli)
+    return pli_d
+
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default):
     # """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
     vrs= [i[0] for i in vrs_s]
+    t_start = time.time()
     v_left, v_near, ts_ckp, v_right = get_near_keys(mid, time_ckp, interval=interval, rsrv=rsrv)
+    print(mid, time_ckp, time.time() - t_start)
     # print(len(v_left.keys()), v_near, ts_ckp, len(v_right.keys()))
     ckp_values = kwh_interval(v_near, vrs=vrs, history=history)
     incr = incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
@@ -157,7 +231,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
             y1f = float(y1)
             y2f = float(y2)
         except:
-            print('y1, y2 str, vrs is %s' % (vr))
+            # print('y1, y2 str, vrs is %s' % (vr))
             return None
         return ((y2f - y1f) + abs(y2f - y1f))/ float(2.0)
 
@@ -176,7 +250,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
     return incr
 
 # # one redis recd for meter 35545, is like:
-s1 = 'kvarhb3=0.0,kvarhb2=0.0,kvarhb1=0.0,kvarhb4=0.0,harm2ua=0.0,harm2ub=0.0,harm2uc=0.0,lf=0.0,kvarha2=0.0,kwhci=0.0,sttl=0.0,tc=800.0,kvarhc1=0.0,kvarhc2=0.0,kvarhc3=0.0,kvarhc4=0.0,qa=0.0,thduc=0.0,harm1ua=0.0,qb=0.0,kwhttle=0.0,kwhttli=33.96,costtl=0.258,ucb=10607.8,cosc=0.0,cosb=0.0,cosa=0.0,kwhbe=0.0,kwhbi=0.0,ubli2=0.0,thdub=0.0,thdia=0.917,qc=0.0,ptr=100.0,thdua=0.0,pttl=0.0,harm5uc=0.0,freq=50.006,ctr=10.0,kwhai=0.0,harm6ua=0.0,harm6ub=0.0,harm6uc=0.0,harm4ib=0.0,harm4ic=0.0,harm4ia=0.0,pos=1,kvarhttl4=24.08,kvarhttl3=0.0,kvarhttl2=0.0,kvarhttl1=0.0,kvarha3=0.0,harm6ia=0.0,harm6ib=0.0,harm6ic=0.0,pb=0.0,pc=0.0,kvarha1=0.0,kvarha4=0.0,harm2ia=0.0,harm2ib=0.0,harm2ic=0.0,kvarhttle=24.08,kvarhttli=0.0,kwhce=0.0,ublu1=0.0,ublu0=0.0,ublu2=0.0,harm3ua=0.0,sc=0.0,harm3uc=0.0,harm3ub=0.0,harm7ua=0.0,harm7uc=0.0,harm7ub=0.0,harm5ic=0.0,harm5ib=0.0,harm5ia=0.0,harm1uc=0.0,sb=0.0,harm4ub=0.0,harm1ic=0.01,harm1ub=0.0,ia=0.02,ic=0.01,uab=10542.1,sa=0.0,harm5ub=0.0,harm5ua=0.0,pa=0.0,qttl=-0.0,harm4uc=0.0,ubli0=0.0,harm1ib=0.0,harm7ia=0.0,harm7ic=0.0,harm7ib=0.0,harm3ia=0.01,harm3ic=0.01,harm3ib=0.0,ubli1=0.0,harm1ia=0.01,thdib=0.0,kwhae=0.0,thdic=0.849,harm4ua=0.0,ctnum=2,'
+
 # # testing
 # history1 = [['20170106_121500', 20.2],
 #             ['20170106_121500', 1.2],
@@ -199,7 +273,9 @@ s1 = 'kvarhb3=0.0,kvarhb2=0.0,kvarhb1=0.0,kvarhb4=0.0,harm2ua=0.0,harm2ub=0.0,ha
 
 def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter', left_null=False, right_null=True):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
-    r = redis_cursors_d[rsrv]()
+    r = redis_cursors_d[rsrv]
+    # TODO: use piplining and transaction.
+    # pip = r.pipline(transaction=False)
     def ts_ckp_int(i):
         # TODO: Here, weird int section problem.
         s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
@@ -209,19 +285,19 @@ def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter', left_null=Fa
         rst = []
         if left:
             ts_k1 = ts_ckp_int(-interval-ckp_shift)[:-2]
+            if one_key:
+                return [[ts_k1, None]]
             for i in range(interval):
                 ts_k2 = ts_ckp_int(- i - ckp_shift)
                 rst.append([ts_k1, ts_k2])
-                if one_key:
-                    break
             return rst
         else:
             ts_k1 = ts_ckp_int(-ckp_shift)[:-2]
+            if one_key:
+                return [[ts_k1, None]]
             for i in range(interval):
                 ts_k2 = ts_ckp_int(i - ckp_shift)
                 rst.append([ts_k1, ts_k2])
-                if one_key:
-                    break
             return rst
     keys_left = time_lst(ckp_shift)
     keys_right = time_lst(ckp_shift, left=False)
@@ -355,7 +431,6 @@ def sql_op(ha, a, hb, b, cmpid='2017', app='eemsop', comp='company'):
     return mksql_15min_insert(t1, cmpid, dif_a, 'f', '3')
 
 
-
 def f1(n, ct= 0, pr=False, *lst):
     # print(d1)
     ct += 1
@@ -365,16 +440,50 @@ def f1(n, ct= 0, pr=False, *lst):
         return n
     # d1['count'] += 1
     import time
-    time.sleep(0.05)
+    time.sleep(0.08)
     return f1(n - 1, ct)
 
 def f0(lst):
     return f1(*lst)
 
-# tp4 = tread_pol(4)
-# tr4 = tp4.map(f0, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
 
-# qrey_charge(company_id, '2017-01-01 14:30:00', {'company_id':n, 'kwhttli':a, 'pttli':q})
+def fln(fn):
+    def f_acc(lst):
+        return fn(*lst)
+    return f_acc
+
+
+def test_thread():
+    f_02 = fln(f1)
+    pp4 = ppol(4)
+    tp4 = tpol(4)
+    trst4 = tp4.map(f_02, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
+    # prst4 = pp4.map(f_02, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
+    # can not use dynamic
+    print(trn4)
+    nn4 = pp4.map(f1, [5,3,8,7])
+    print(nn4)
+    # gp8 = gpol(8)
+    # gp4 = gpol(4)
+    # gp2 = gpol(2)
+    # ta = time.time()
+    # gr4 = gp4.map(fln(f1), [[21,3], [21,2], [22, 4], [22, 1], [24,1], [25, 2]])
+    # print(time.time() - ta)
+
+    # trl4 = tp4.map(fln, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
+    # tr4 = tp4.map(f0, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
+
+    # qrey_charge(company_id, '2017-01-01 14:30:00', {'company_id':n, 'kwhttli':a, 'pttli':q})
+
+
+def test_redis(fn=get_near_keys, lst = [2, 0 ], args={}):
+    import time
+    t_start = time.time()
+    # near_keys = get_near_keys(2, 0)
+    near_keys = fn(*lst, **args)
+    print(time.time() - t_start)
+    return near_keys
+
 
 def main():
     pass
