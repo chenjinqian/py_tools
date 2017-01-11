@@ -6,9 +6,10 @@
 
 
 import read_config as rcfg
-import redis_pool as rpol
+# import redis_pool as rpol  # not used
 import mysql_pool as mpol
 import redis
+import time
 
 
 def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
@@ -74,7 +75,7 @@ def test1(n=2, d={}):
     return test1((n - 1), {})
 
 
-def one_comp(cid, mul=True, tp=gpol(2), app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default):
+def one_comp(cid, n, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default):
     # TODO: pttl unit is hour.
     import time
     his_d = {}
@@ -97,80 +98,49 @@ def one_comp(cid, mul=True, tp=gpol(2), app='mysql:app_eemsyd', comp='company', 
     def t_acc(lst):
         return thread_one(*lst)
 
+    def mk_redis_tasks(mids=mids, ckps=ckps, cid=cid, interval=interval):
+        tasks = []
+        for t in ckps:
+            for mid in mids:
+                one_task = [[cid, mid, t, True], [cid, mid, t + interval, False]]
+                tasks += one_task
+        return tasks
+
+    def rd_acc(lst):
+        return rd(*lst)
+
+    def rd(cid, mid, t, left_null):
+        rlt_4 = get_near_keys(mid, t, interval=interval, rsrv=rsrv, left_null=left_null)
+        # rlt_4 = [1,2,[1,2],4]
+        # time.sleep(0.1)
+        d= {}
+        key = '%s_%s_%s_%s' % (cid, mid, t, rlt_4[2][1])
+        # rlt_4[2] is ts_ckp, will always have values, like ['20170111_120000', '20170111_121500']
+        d[key] = rlt_4
+        return rlt_4
+
     t_s = time.time()
+    print(len(mk_redis_tasks(mids, ckps)))
     if mul:
-        ic_sum = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
-        # try:
-        #     tp.join()
-        # except Exception as e:
-        #     print(e)
-        print(time.time() - t_s)
-        print(his_d.keys())
+        tp = gpol(n)
+        # ic_sum = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
+        ic_sum = tp.map(rd_acc, mk_redis_tasks())
+    else:
+        ic_sum = []
+    print(time.time() - t_s)
+    # print(his_d.keys())
     return ic_sum
-    # tp.join()
-    # for t in ckps:
-    #     for mid in mids:
-    #         # print(t, mid)
-    #         if  not str(str(t) +'_'+ str(mid)) in his_d:
-    #             ic0, hi0 = calc_meter_acc(mid, t + interval, vrs_s=vrs_s)
-    #             # print(hi0)
-    #             his_d[str(t) +'_'+ str(mid)] = hi0
-    #         ic, hi = calc_meter_acc(mid, t, history=his_d[str(t) + '_' + str(mid)], vrs_s=vrs_s)
-    #         # print(ic, hi)
-    #         his_d[str(t) +'_'+ str(mid)] = hi
-    #         ic_sum.append(ic)
-    # print(time.time() - t_s)
-    # return ic_sum
 
-t_a = time.time()
-pa= get_mids_fee_policy(mids_all)
-# mids_all = get_mids_all()
-# poli_all = get_all_fee_policy()
-print(time.time() - t_a)
+# ta = time.time()
+# comp2 = one_comp(2)
+# print(time.time() - ta)
 
-
-def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
-    mids = get_mids_all(rsrv=rsrv, lk1=lk1,raw=raw)
-    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw)
-
-
-def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
-    r = redis_cursors_d[rsrv]
-    mids = r.hkeys('sync_meterinfo')
-    return mids
-
-
-def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
-    def parse_pli(sss):
-        d = {}
-        ss = [s for s in sss.split(',') if s]
-        for s in ss:
-            try:
-                k, v = s.split('=')
-                d[k] = v
-            except:
-                print(s)
-                continue
-        return d
-    pli_d = {}
-    r = redis_cursors_d[rsrv]
-    p = r.pipeline(transaction=False)
-    for mid in  mids:
-        p.hget(lk1, mid)
-    fee_plis = p.execute()
-    for mid, pli in zip(mids, fee_plis):
-        pli_d[mid] = pli if raw else parse_pli(pli)
-    return pli_d
-
-
-
-def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default):
+def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
     # """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
     vrs= [i[0] for i in vrs_s]
-    t_start = time.time()
-    v_left, v_near, ts_ckp, v_right = get_near_keys(mid, time_ckp, interval=interval, rsrv=rsrv)
-    print(mid, time_ckp, time.time() - t_start)
-    # print(len(v_left.keys()), v_near, ts_ckp, len(v_right.keys()))
+    # t_start = time.time()
+    v_left, v_near, ts_ckp, v_right = get_near_keys(mid, time_ckp, interval=interval, rsrv=rsrv, left_null=left_null)
+    # print(mid, time_ckp, time.time() - t_start)
     ckp_values = kwh_interval(v_near, vrs=vrs, history=history)
     incr = incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
     return [incr, ckp_values]
@@ -249,9 +219,8 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
             incr.append(None)
     return incr
 
-# # one redis recd for meter 35545, is like:
-
 # # testing
+# # one redis recd for meter 35545, is like:
 # history1 = [['20170106_121500', 20.2],
 #             ['20170106_121500', 1.2],
 #             ['20170106_121500', 2.2],
@@ -271,9 +240,17 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
 #           ['pttle', 1]]
 #incr1 =  incr_sumup(history1, v_left1, ckp_values1, ts_ckp1, None, vrs_s1)
 
+# t_a = time.time()
+# pa= get_mids_fee_policy(mids_all)
+# # mids_all = get_mids_all()
+# # poli_all = get_all_fee_policy()
+# print(time.time() - t_a)
+
+
 def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter', left_null=False, right_null=True):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
     r = redis_cursors_d[rsrv]
+    p = r.pipeline(transaction=False)
     # TODO: use piplining and transaction.
     # pip = r.pipline(transaction=False)
     def ts_ckp_int(i):
@@ -303,12 +280,24 @@ def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter', left_null=Fa
     keys_right = time_lst(ckp_shift, left=False)
     lk1, lk2 = keys_left[0]
     rk1, rk2 = keys_right[0]
-    left_keys = sorted(r.hkeys('meterdata_%s_%s' % (mid, lk1)))
-    if not left_keys:
-        left_key = None
-    else:
-        left_key = left_keys[-1]
-    left_value = r.hget('meterdata_%s_%s' % (mid, lk1), left_key)
+    ### added
+    p.hkeys('meterdata_%s_%s' % (mid, lk1))
+    p.hkeys('meterdata_%s_%s' % (mid, rk1))
+    left_keys_raw, right_keys_raw = p.execute()
+    left_keys, right_keys = sorted(left_keys_raw), sorted(right_keys_raw)
+    left_key = None if not left_keys else left_keys[-1]
+    right_key = None if not right_keys else right_keys[1]
+    p.hget('meterdata_%s_%s' % (mid, lk1), left_key)
+    p.hget('meterdata_%s_%s' % (mid, lk1), right_key)
+    p.hgetall('meterdata_%s_%s' % (mid, lk1)) if not left_null else left_values = None
+
+    ### end
+    # left_keys = sorted(r.hkeys('meterdata_%s_%s' % (mid, lk1)))
+    # if not left_keys:
+    #     left_key = None
+    # else:
+    #     left_key = left_keys[-1]
+    # left_value = r.hget('meterdata_%s_%s' % (mid, lk1), left_key)
     if left_null:
         left_values = None
     else:
@@ -396,6 +385,52 @@ def get_comp_mid(cid, app='mysql:app_eemsyd', comp='company'):
         mids = []
     return [int(i) for i in mids if i]
 
+# mids_all = get_mids_all()
+# gp8  = gpol(1000)
+# ta  = time.time()
+# a13 = gp8.map(get_mids_fee_policy, mids_all)
+# 5s, with 64 gevent pool, 8s with 1000 gpol.
+# pli_all = get_all_fee_policy()
+# 2s
+# print(time.time() - ta)
+
+def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+    mids = get_mids_all(rsrv=rsrv, lk1=lk1,raw=raw)
+    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw)
+
+
+def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+    r = redis_cursors_d[rsrv]
+    mids = r.hkeys('sync_meterinfo')
+    return mids
+
+
+def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+    def parse_pli(sss):
+        d = {}
+        if not sss:
+            return d
+        ss = [s for s in sss.split(',') if s]
+        for s in ss:
+            try:
+                k, v = s.split('=')
+                d[k] = v
+            except:
+                # print(s)
+                continue
+        return d
+    pli_d = {}
+    r = redis_cursors_d[rsrv]
+    p = r.pipeline(transaction=False)
+    if type(mids) == int:
+        mids = [mids]
+    for mid in  mids:
+        p.hget(lk1, mid)
+    fee_plis = p.execute()
+    for mid, pli in zip(mids, fee_plis):
+        pli_d[mid] = pli if raw else parse_pli(pli)
+    return pli_d
+
 
 def how_about_sleep(shift=180, interval=900, real_sleep=True):
     import time
@@ -409,7 +444,7 @@ def how_about_sleep(shift=180, interval=900, real_sleep=True):
     return sleep_for
 
 
-def sql_op(ha, a, hb, b, cmpid='2017', app='eemsop', comp='company'):
+def sql_op(ha, a, hb, b, cmpid='2017', app='eemsyd', comp='company'):
     # TODO: insert one sql into sql.
     # invalide.
     dif_a = ha - a
