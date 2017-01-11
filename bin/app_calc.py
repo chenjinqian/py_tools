@@ -75,7 +75,7 @@ def test1(n=2, d={}):
     return test1((n - 1), {})
 
 
-def one_comp(cid, n, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default):
+def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default):
     # TODO: pttl unit is hour.
     import time
     his_d = {}
@@ -219,33 +219,6 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
             incr.append(None)
     return incr
 
-# # testing
-# # one redis recd for meter 35545, is like:
-# history1 = [['20170106_121500', 20.2],
-#             ['20170106_121500', 1.2],
-#             ['20170106_121500', 2.2],
-#             ['20170106_121500', 11.2]]
-# ckp_values1 = [['20170106_121500', 41.1],
-#                ['20170106_121500', 3.1],
-#                ['20170106_121500', 3.1],
-#                ['20170106_121500', 14.1]]
-# v_left1 = {'20170106_120315': 'kwhttli=42,kwhttle=3,pttli=2,pttle=3',
-#           '20170106_120625': 'kwhttli=31,kwhttle=2,pttli=2,pttle=3',
-#           '20170106_121135': 'kwhttli=21,kwhttle=1,pttli=2,pttle=3',
-#           '20170106_121445': 'kwhttli=32,kwhttle=2,pttli=2,pttle=3'}
-# ts_ckp1 =['20170106_120000', '20170106_121500']
-# vrs_s1 = [['kwhttli', 0],
-#           ['kwhttle', 0],
-#           ['pttli', 1],
-#           ['pttle', 1]]
-#incr1 =  incr_sumup(history1, v_left1, ckp_values1, ts_ckp1, None, vrs_s1)
-
-# t_a = time.time()
-# pa= get_mids_fee_policy(mids_all)
-# # mids_all = get_mids_all()
-# # poli_all = get_all_fee_policy()
-# print(time.time() - t_a)
-
 
 def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter', left_null=False, right_null=True):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
@@ -281,33 +254,60 @@ def get_near_keys(mid, ckp_shift, interval=900, rsrv='redis:meter', left_null=Fa
     lk1, lk2 = keys_left[0]
     rk1, rk2 = keys_right[0]
     ### added
-    p.hkeys('meterdata_%s_%s' % (mid, lk1))
-    p.hkeys('meterdata_%s_%s' % (mid, rk1))
-    left_keys_raw, right_keys_raw = p.execute()
-    left_keys, right_keys = sorted(left_keys_raw), sorted(right_keys_raw)
-    left_key = None if not left_keys else left_keys[-1]
-    right_key = None if not right_keys else right_keys[1]
-    p.hget('meterdata_%s_%s' % (mid, lk1), left_key)
-    p.hget('meterdata_%s_%s' % (mid, lk1), right_key)
-    p.hgetall('meterdata_%s_%s' % (mid, lk1)) if not left_null else left_values = None
+    if not left_null:
+        p.hgetall('meterdata_%s_%s' % (mid, lk1))
+        [left_values] = p.execute()
+        try:
+            left_key = sorted(left_values.keys())[-1] if left_values else None
+            print('left_key %s' % left_key)
+        except:
+            print(type(left_values), left_values)
+        left_value = left_values[left_key] if left_key else None
+    else:
+        left_values = None
+        p.hkeys('meterdata_%s_%s' % (mid, lk1))
+        [left_keys_raw] = p.execute()
+        left_keys = sorted(left_keys_raw)
+        left_key = left_keys[-1] if left_keys else None
+        print('left_key %s' % left_key)
+        p.hget('meterdata_%s_%s' % (mid, lk1), left_key)
+        [left_value] = p.execute()
+    if not right_null:
+        p.hgetall('meterdata_%s_%s' % (mid, lk1))
+        [right_values] = p.execute()
+        right_key = sorted(right_values.keys())[0] if right_values else None
+        right_value = right_values[right_key] if right_key else None
+    else:
+        right_values = None
+        p.hkeys('meterdata_%s_%s' % (mid, rk1))
+        [right_keys_raw] = p.execute()
+        right_keys = sorted(right_keys_raw)
+        right_key = right_keys[0] if right_keys else None
+        print('right_key %s' % right_key)
+        p.hget('meterdata_%s_%s' % (mid, rk1), right_key)
+        [right_value] = p.execute()
 
-    ### end
+    # left_key = None if not left_keys else left_keys[-1]
+    # right_key = None if not right_keys else right_keys[1]
+    # p.hget('meterdata_%s_%s' % (mid, lk1), left_key)
+    # p.hget('meterdata_%s_%s' % (mid, lk1), right_key)
+    # p.hgetall('meterdata_%s_%s' % (mid, lk1)) if not left_null else left_values = None
     # left_keys = sorted(r.hkeys('meterdata_%s_%s' % (mid, lk1)))
     # if not left_keys:
     #     left_key = None
     # else:
     #     left_key = left_keys[-1]
     # left_value = r.hget('meterdata_%s_%s' % (mid, lk1), left_key)
-    if left_null:
-        left_values = None
-    else:
-        left_values = r.hgetall('meterdata_%s_%s' % (mid, lk1))
-    right_keys = sorted(r.hkeys('meterdata_%s_%s' % (mid, rk1)))
-    if not right_keys:
-        right_key = None
-    else:
-        right_key = right_keys[0]
-    right_value = r.hget('meterdata_%s_%s' % (mid, rk1), right_key)
+    # if left_null:
+    #     left_values = None
+    # else:
+    #     left_values = r.hgetall('meterdata_%s_%s' % (mid, lk1))
+    # right_keys = sorted(r.hkeys('meterdata_%s_%s' % (mid, rk1)))
+    # if not right_keys:
+    #     right_key = None
+    # else:
+    #     right_key = right_keys[0]
+    # right_value = r.hget('meterdata_%s_%s' % (mid, rk1), right_key)
     if right_null:
         right_values = None
     else:
