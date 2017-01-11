@@ -60,7 +60,10 @@ from gevent.pool import Pool as gpol
 vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2]]
 ckps_default = [0, 60*30, 60*60*3]
 rsrv_default = 'redis:meter'
+
+# not global, should be defined in main
 his_d_default = {}
+pli_d_default = get_all_fee_policy()
 
 # fee_pli_d = get_all_fee_policy()
 
@@ -77,19 +80,26 @@ def test1(n=2, d={}):
     return test1((n - 1), {})
 
 
-
-def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default):
+def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, pli_d=pli_d_default):
     # TODO: pttl unit is hour.
+    def mk_his_key(mid, t, ckp_ts, no_mid=False):
+        # return '%s_%s_%s_%s_%s_%s' % (app, comp, cid, mid, t, ckp_ts)
+        if no_mid:
+            return '%s/%s/%s/%s' % (app, comp, cid, ckp_ts)
+        return '%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts)
+
     import time
-    ic_sum = []
+    fees_d = {}
     one_comp_mids = get_comp_mid(cid, app=app, comp=comp)
+    print('mids is %s' % one_comp_mids)
     flag_key = mk_his_key(0, 0, 0)
     if not flag_key in his_d:
         his_d[flag_key] = 1
         init_history = True
     else:
         init_history = False
-    def thread_one(mids, t):
+
+    def thread_one(mids, t): # use local varable
         if  not str(str(t) +'_'+ str(mid)) in his_d:
             ic0, hi0 = calc_meter_acc(mid, t + interval, vrs_s=vrs_s)
             # print(hi0)
@@ -103,6 +113,7 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ck
     def mk_redis_tasks(mids=one_comp_mids, ckps=ckps, cid=cid, interval=interval):
         tasks = []
         if init_history:
+            print('init mk_redis_tasks')
             for t in ckps:
                 for mid in mids:
                     one_task = [[cid, mid, t+interval, True], [cid, mid, t, False]]
@@ -121,36 +132,42 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ck
         # rlt_4[2] is ts_ckp, will always have values, like ['20170111_120000', '20170111_121500']
         return [meta_info, rlt_4]
 
-    def mk_his_key(mid, t, ckp_ts):
-        return '%s_%s_%s_%s_%s_%s' % (app, comp, cid, mid, t, ckp_ts)
-
-    def reduce_two_zone(sect): # use vrs_s outer_side info
-        [key_his, key_cur], v_left, v_near, ts_ckp, v_right = sect
-        if not key_his in his_d:
-            ckp_values = kwh_interval(v_near1, history=[], vrs_s=vrs_s)
-            d[key_cur] = ckp_values
+    def vrs_parse(sect): # use vrs_s outer_side info
+        [[key_0, key_1], [v_left, v_near, ts_ckp, v_right]] = sect
+        # TODO: try
+        # print(key_0, key_1)
+        if not key_0 in his_d:
+            ckp_values = kwh_interval(v_near, history=[], vrs_s=vrs_s)
+            his_d[key_1] = ckp_values
             return []
         else:
-            incr = incr_sumup(his_d[key_his], v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
-            return incr
+            ckp_values = kwh_interval(v_near, history=his_d[key_0], vrs_s=vrs_s)
+            his_d[key_1] = ckp_values
+            # print(ckp_values)
+            incr = incr_sumup(his_d[key_0], v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
+            return [key_1, incr]
+
+    def reduce_mid():
 
     t_s = time.time()
     # print(len(mk_redis_tasks(mids, ckps)))
     if mul:
         tp = gpol(n)
-        # ic_sum = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
-        ic_sum = tp.map(rd_acc, mk_redis_tasks())
-
+        # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
+        redis_rcds = tp.map(rd_acc, mk_redis_tasks())
+        vrs_extr = [i for i in map(vrs_parse, redis_rcds) if i]
     else:
-        ic_sum = []
+        redis_rcds = []
     print(time.time() - t_s)
     # print(his_d.keys())
-    return ic_sum
+    # return redis_rcds
+    # return [redis_rcds, vrs_extracted]
+    # todo, return sql list at last.
+    return vrs_extr
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
     # """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
-
     # t_start = time.time()
     v_left, v_near, ts_ckp, v_right = get_near_keys(mid, time_ckp, interval=interval, rsrv=rsrv, left_null=left_null)
     # print(mid, time_ckp, time.time() - t_start)
@@ -303,7 +320,7 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
         right_keys_raw = r_dok
         right_keys = sorted(right_keys_raw)
         right_key = right_keys[0] if right_keys else None
-        print('right_key %s' % right_key)
+        # print('right_key %s' % right_key)
         p.hget('meterdata_%s_%s' % (mid, rk1), right_key)
         [right_value] = p.execute()
     # left_key = None if not left_keys else left_keys[-1]
