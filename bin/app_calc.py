@@ -60,6 +60,16 @@ from gevent.pool import Pool as gpol
 vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2]]
 ckps_default = [0, 60*30, 60*60*3]
 rsrv_default = 'redis:meter'
+# app_lst_default = [i for i in cfgd.keys() if 'mysql' in i]
+app_lst_default = ['mysql:app_eemsii',
+                   # 'mysql:app_eemsdemo',
+                   # 'mysql:meterinfo',
+                   # 'mysql:app_eemsakuu',
+                   'mysql:app_eemsop',
+                   'mysql:app_eemssec',
+                   'mysql:app_eemscr',
+                   'mysql:app_eemsman',
+                   'mysql:app_eemsyd',]
 
 # not global, should be defined in main
 his_d_default = {}
@@ -89,12 +99,12 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ck
         return '%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts)
 
     import time
-    fees_d = {}
-    one_comp_mids = get_comp_mid(cid, app=app, comp=comp)
+    one_comp_mids = sql_get_comp_mids_or_price(cid, app=app, comp=comp)
+    # TODO: use global dict, cache at first 15 mins
     print('mids is %s' % one_comp_mids)
     flag_key = mk_his_key(0, 0, 0)
     if not flag_key in his_d:
-        his_d[flag_key] = 1
+        his_d[flag_key] = 'inited'
         init_history = True
     else:
         init_history = False
@@ -147,8 +157,22 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ck
             incr = incr_sumup(his_d[key_0], v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
             return [key_1, incr]
 
-    def reduce_mid():
-
+    fee_d_default = {}
+    # fees_k is like {'mysql:app_eemsyd/company/3/20170111_214500':{}}
+    def reduce_mid(vrs_extr_one, fee_d=fee_d_default, pli_d=pli_d):
+        ks, vr_d = vrs_extr_one
+        def key_convert(ks, n):
+            ss = ks.split('/')[:n] + ks.split('/')[n+1:]
+            new_s = ''
+            for i in ss:
+                new_s += i
+            return new_s
+        def apply_pli(vrs_extr_one, pli_d):
+            tmp_d = {}
+            if not pli_d['use_power'] == 0:
+                pass
+        new_cid_key = key_convert(ks)
+        pass
     t_s = time.time()
     # print(len(mk_redis_tasks(mids, ckps)))
     if mul:
@@ -235,18 +259,22 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
             return None
         return ((y2f - y1f) + abs(y2f - y1f))/ float(2.0)
 
-    incr = []
+    incr = {}
     for hst, ckp, vr in zip(history, ckp_values, vrs_s):
+        incr['_times'] = ts_ckp[0]
         if vr[1] == 0:
-            incr.append([ts_ckp[0], pstv(ckp[1], hst[1])])
+            # incr.append([vr,ts_ckp[0], pstv(ckp[1], hst[1])])
+            incr[vr[0]] = pstv(ckp[1], hst[1])
             # Notice: use leftside of the time section.
         elif vr[1] == 1:
-            incr.append([ts_ckp[0], sumup(hst, v_left, ckp, v_right, vr[0], 'a')])
+            incr[vr[0]] = sumup(hst, v_left, ckp, v_right, vr[0], 'a')
+            # incr.append([vr, ts_ckp[0], sumup(hst, v_left, ckp, v_right, vr[0], 'a')])
         elif vr[1] == 2:
-            incr.append([ts_ckp[0], [sumup(hst, v_left, ckp, v_right, vr[0], 'p'), sumup(hst, v_left, ckp, v_right, vr[0], 'n')]])
+            incr[vr[0]] = [sumup(hst, v_left, ckp, v_right, vr[0], 'p'), sumup(hst, v_left, ckp, v_right, vr[0], 'n')]
+            # incr.append([vr, ts_ckp[0], [sumup(hst, v_left, ckp, v_right, vr[0], 'p'), sumup(hst, v_left, ckp, v_right, vr[0], 'n')]])
         else:
             print('type interger not recongnized, should be 0 or 1, get %s' % vr[1])
-            incr.append(None)
+            # incr.append(None)
     return incr
 
 
@@ -412,8 +440,49 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     return rst
 
 
-def get_comp_mid(cid, app='mysql:app_eemsyd', comp='company'):
+def sql_get_all_info(app_lst=app_lst_default):
+    company_id_d = {} # {'mysql:app_eemsyd':[],}
+    meter_id_d = {} # {'mysql:app_eemsyd/35545':[]}
+    price_d = {}
+    for app in app_lst:
+        import os, sys
+        try:
+            company_id_d[app] = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
+        except:
+            print(str(sys.exc_info()))
+    for app, cids in company_id_d.items():
+        for cid in cids:
+            meter_id_d['%s/%s' % (app, cid)] = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
+    for app, cids in company_id_d.items():
+        for cid in cids:
+            price_d['%s/%s' % (app, cid)] = sql_get_mids_cids_or_price(cid, option='price', app=app)
+    return [company_id_d, meter_id_d, price_id]
+
+
+def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsyd', comp='company'):
     worker = mysql_workers_d[app]
+    if option == 'price':
+        sql = 'select hours, price_p, price_f, price_v  from price_policy  where company_id=%s' % cid
+        rst = worker(sql)
+        tmp_d = {}
+        if rst:
+            tmp_d['hours'] = rst[0][0]
+            tmp_d['p'] = float(rst[0][1])
+            tmp_d['f'] = float(rst[0][2])
+            tmp_d['v'] = float(rst[0][3])
+        return tmp_d
+    elif option == 'company_id':
+        sql = 'select id from company;'
+        try:
+            rst = worker(sql)
+        except:
+            print('sql query my_except')
+            return []
+        if rst:
+            rst_int = [int(i[0]) for i in rst]
+        else:
+            rst_int = []
+        return rst_int
     sql = 'select related_gmids from %s where id=%s;' % (comp, cid)
     rst = worker(sql)
     if rst:
