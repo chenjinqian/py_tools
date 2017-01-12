@@ -50,7 +50,7 @@ redis_cursors_d = mk_rp_d()
 # from multiprocessing.dummy import Pool as tpol
 # tp4 = tpol(4)
 from gevent.pool import Pool as gpol
-# from gevent import monkey;monkey.patch_all()
+from gevent import monkey;monkey.patch_all()
 
 # from gevent import monkey
 # gp4 = gpol(4)
@@ -162,7 +162,7 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
 
     fee_d_default = {}
     # fees_k is like {'mysql:app_eemscr/company/3/20170111_214500':{}}
-    def reduce_mid(vrs_extr_one, fee_d=fee_d_default, sql_meta_info=sql_meta_info):
+    def fee_reduce_mid(vrs_extr_one, fee_d=fee_d_default, sql_meta_info=sql_meta_info):
         def add_up_dic(d1, d2):
             for k1, v1 in d1.items():
                 v2 = d2[k1] if k1 in d2 else None
@@ -170,8 +170,8 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
                     v_add = v1
                 else:
                     v_add = v1 + v2 if (v1 and v2) else (v1 or v2)
-                v1[k1] = v_add
-            return v1
+                d1[k1] = v_add
+            return d1
 
         # TODO: should merge fee_d and pli_d into one dict.
         ks, vr_d = vrs_extr_one
@@ -179,8 +179,11 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
         # # ks is like 'mysql:app_eemscr/company/3/20170101_121500'
         cid_fee_key, meter_id = key_get_out(ks)
         cid = key_get_out(ks, 2)[1]
-        price_info_d = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid][meter_id]['price']
-        pli_info_d = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'][meter_id]
+        price_info_d = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['price']
+        pli_info_d   = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'][meter_id]
+        # print(vr_d, price_info_d, pli_info_d)
+        # time.sleep(1000)
+        # print(vr_d)
         fee_meter_new = apply_pli(vr_d, price_info_d, pli_info_d)
         if not cid_fee_key in fee_d:
             fee_d[cid_fee_key] = fee_meter_new
@@ -196,11 +199,19 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
         # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
         redis_rcds = tp.map(rd_acc, mk_redis_tasks())
         vrs_extr = [i for i in map(vrs_parse, redis_rcds) if i]
+        fee_lst = map(fee_reduce_mid, vrs_extr)
     else:
         redis_rcds = []
     print(time.time() - t_s)
     # return vrs_extr
-    return fee_d_default
+    return [vrs_extr, fee_lst, fee_d_default]
+
+
+# def test_map1(lst):
+#     return sum(lst)
+
+# t1 = map(test_map1, [[1,2,3,5], [3,4,5,]])
+
 
 # testing data:
 # elec_ table is like
@@ -220,7 +231,7 @@ vr_ext_one = ['mysql:app_eemscr/company/3/2166/20170111_194500',
               {'kwhttle': None,
                'kwhttli': None,
                'pttl': [194.30324470, 0.0],
-               'times': '20170111_193000'}]
+               '_times': '20170111_193000'}]
 
 comp_info_d_one = {'meter_ids': [34758, 2159, 2166, 2024, 2016, 2019, 2125, 2000, 2075, 2106],
                    'price': {'f': 0.5846,
@@ -249,14 +260,16 @@ fee_d_one = {'charge': 113.58967685162,
              'kwhi': 194.3032447,
              'p': 777.2129788,
              'spfv': 'f',
-             'times': '20170111_193000'}
+             '_times': '20170111_193000'}
 
 
 def apply_pli(vr_d, price_d, pli_d):
+    if not vr_d:
+        return {}
     tmp_d = {}
     # print(vr_d, price_d, pli_d)
     index = 3
-    tmp_d['spfv'] = price_d['hours'][int(vr_d['times'][9:11]) - 1]
+    tmp_d['spfv'] = price_d['hours'][int(vr_d['_times'][9:11]) - 1]
     rate = price_d[tmp_d['spfv']]
     if not pli_d['use_power'] == '0':
         # TODO: Notice, here, change pli_ if data not avaible.
@@ -280,7 +293,7 @@ def apply_pli(vr_d, price_d, pli_d):
         tmp_d['charge'] = rate * tmp_d['kwhi']
     else:
         tmp_d['charge'] = None
-    tmp_d['times'] = vr_d['times']
+    tmp_d['_times'] = vr_d['_times']
     return tmp_d
 
 
@@ -351,7 +364,8 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
                 acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
             # print(acc, x1, y1, x2, y2)
             v_sum += acc
-        return v_sum/float(factor)
+        # print(v_sum, v_sum/float(factor))
+        return v_sum/float(factor)  # factor for four hours.
 
     def pstv(y1, y2):
         try:
