@@ -256,7 +256,7 @@ def apply_pli(vr_d, price_d, pli_d):
     index = 3
     tmp_d['spfv'] = price_d['hours'][int(vr_d['times'][9:11]) - 1]
     rate = price_d[tmp_d['spfv']]
-    if not pli_d['use_power'] == '0' or vr_d['kwhttli'] is None:
+    if not pli_d['use_power'] == '0':
         # TODO: Notice, here, change pli_ if data not avaible.
         tmp_d['kwhi'] = vr_d['pttl'][0] # pttl have two value as list, p+ and p-
         tmp_d['kwhe'] = vr_d['pttl'][1]
@@ -541,8 +541,8 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     return rst
 
 
-def sql_get_all_info(app_lst=app_lst_default):
-    pli_d_default = get_all_fee_policy()
+def sql_get_all_info(app_lst=app_lst_default, comp='company'):
+    mids_pli_d = get_all_fee_policy()
     company_id_d = {} # {'mysql:app_eemscr':[],}
     rst_d = {}
     for app in app_lst:
@@ -552,24 +552,24 @@ def sql_get_all_info(app_lst=app_lst_default):
             # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
             # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
             # TODO: get workshop and equipment fees
-            rst_d[app] = {}
+            rst_d['%s/%s' % (app, comp)] = {}
             for cid in cid_list:
-                rst_d[app]['company/%s' % cid] = {}
+                rst_d['%s/%s' % (app, comp)]['%s' % cid] = {}
         except:
             print(str(sys.exc_info()))
-    for app in rst_d.keys():
-        for cid in rst_d[app].keys():
-            rst_d[app][cid] = {}
+    for ap_comp in rst_d.keys():
+        for cid in rst_d[ap_comp].keys():
+            rst_d[ap_comp][cid] = {}
             meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
-            rst_d[app][cid]['meter_id'] = {}
+            rst_d[ap_comp][cid]['meter_id'] = {}
             for mid in meter_id_lst:
-                if mid in pli_d_default:
-                    rst_d[app][cid]['meter_id'][str(mid)] = pli_d_default[str(mid)]
+                if str(mid) in mids_pli_d:
+                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = mids_pli_d[str(mid)]
                 else:
-                    rst_d[app][cid]['meter_id'][str(mid)] = {}
-    for app in rst_d.keys():
-        for cid in rst_d[app].keys():
-            rst_d[app][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
+                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = {}
+    for ap_comp in rst_d.keys():
+        for cid in rst_d[ap_comp].keys():
+            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
     return rst_d
 
 
@@ -627,7 +627,7 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='com
         mids = rst[0][0].split(',')
     else:
         mids = []
-    return [int(i) for i in mids if i]
+    return [str(i) for i in mids if i]
 
 # mids_all = get_mids_all()
 # gp8  = gpol(1000)
