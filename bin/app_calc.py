@@ -71,6 +71,7 @@ app_lst_default = ['mysql:app_eemsii',
                    'mysql:app_eemsman',
                    'mysql:app_eemsyd',]
 
+sql_meta_info_default = sql_get_all_info(app_lst_default)
 # not global, should be defined in main
 his_d_default = {}
 pli_d_default = get_all_fee_policy()
@@ -159,20 +160,16 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ck
 
     fee_d_default = {}
     # fees_k is like {'mysql:app_eemsyd/company/3/20170111_214500':{}}
-    def reduce_mid(vrs_extr_one, fee_d=fee_d_default, pli_d=pli_d):
+    def reduce_mid(vrs_extr_one, fee_d=fee_d_default, price_d, pli_d=pli_d):
+        # TODO: should merge fee_d and pli_d into one dict.
         ks, vr_d = vrs_extr_one
-        def key_convert(ks, n):
-            ss = ks.split('/')[:n] + ks.split('/')[n+1:]
-            new_s = ''
-            for i in ss:
-                new_s += i
-            return new_s
-        def apply_pli(vrs_extr_one, pli_d):
-            tmp_d = {}
-            if not pli_d['use_power'] == 0:
-                pass
-        new_cid_key = key_convert(ks)
+        new_cid_fee_key, meter_id = key_get_out(ks)
+        cid = key_get_out(ks, 2)[1]
+        fee_one = apply_pli(vr_d, price_d[app][cid], pli_d[meter_id])
+        if not new_cid_key in fee_d_default:
+            pass
         pass
+
     t_s = time.time()
     # print(len(mk_redis_tasks(mids, ckps)))
     if mul:
@@ -183,11 +180,65 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ck
     else:
         redis_rcds = []
     print(time.time() - t_s)
-    # print(his_d.keys())
-    # return redis_rcds
-    # return [redis_rcds, vrs_extracted]
-    # todo, return sql list at last.
     return vrs_extr
+
+
+def apply_pli(vr_d, price_d, pli_d):
+    tmp_d = {}
+    tmp_d['spfv'] = price_d['hours'][int(vr_d['times'][9:11])]
+    rate = price_d[tmp_d['spfv']]
+    if not pli_d['use_power'] == '0':
+        tmp_d['kwh'] = vr_d['pttl'][0]
+    else:
+        tmp_d['kwh'] = vr_d['kwhttli']
+    if not pli_d['use_power'] == 0:
+        pass
+
+def key_get_out(ks, n=3):
+    ss = ks.split('/')[:n] + ks.split('/')[n+1:]
+    s_out = ks.split('/')[n]
+    new_s = ''
+    for i in ss:
+        new_s += i + '/'
+    return new_s[:-1], s_out
+
+# testing data:
+table_elec = "(('stat_time', 'datetime', 'NO', 'PRI', None, ''),
+ ('company_id', 'smallint(5) unsigned', 'NO', 'PRI', None, ''),
+ ('kwh', 'double', 'NO', '', None, ''),
+ ('spfv', 'char(1)', 'NO', '', None, ''),
+ ('charge', 'double', 'NO', '', None, ''))
+"
+
+vr_ext_one =  ['mysql:app_eemsyd/company/3/2166/20170111_194500',
+               {'kwhttle': None,
+                'kwhttli': None,
+                'pttl': [194.30324470, 0.0],
+                'times': '20170111_193000'}],
+
+comp_info_d_one = {'meter_ids': [34758, 2159, 2166, 2024, 2016, 2019, 2125, 2000, 2075, 2106],
+                   'price': {'f': 0.5846,
+                             'hours': 'vvvvvvvvfpppfffffffpppff',
+                             'p': 0.9329,
+                             'v': 0.3167}}
+
+pli_one = {'ctnum': '2',
+             'ctr': '10.0',
+             'dev_mac': '120000af6b3a',
+             'dev_model': 'pb600',
+             'gmid': '35545',
+             'kva': '800.0',
+             'meter_sn': '',
+             'ptr': '100.0',
+             'r_ia': '10.0',
+             'r_kwhttli': '1000.0',
+             'r_pa': '1000.0',
+             'r_ua': '100.0',
+             'tc': '800.0',
+             'use_energy': '0',
+             'use_power': '0'}
+
+
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
@@ -216,7 +267,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
     def int_f_k(k):
         return int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
 
-    def sumup(hst, v_left, ckp, v_right, vr, s='p'):
+    def sumup(hst, v_left, ckp, v_right, vr, s='p', factor=3600):
         """s = p/n/a, for positive, negative, as is."""
         if not v_left or not type(v_left)==dict:
             return None
@@ -248,7 +299,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
                 acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
             # print(acc, x1, y1, x2, y2)
             v_sum += acc
-        return v_sum
+        return v_sum/float(factor)
 
     def pstv(y1, y2):
         try:
@@ -442,21 +493,27 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
 
 def sql_get_all_info(app_lst=app_lst_default):
     company_id_d = {} # {'mysql:app_eemsyd':[],}
-    meter_id_d = {} # {'mysql:app_eemsyd/35545':[]}
-    price_d = {}
+    rst_d = {}
     for app in app_lst:
         import os, sys
         try:
-            company_id_d[app] = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
+            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
+            # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
+            # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
+            # TODO: get workshop and equipment fees
+            rst_d[app] = {}
+            for cid in cid_list:
+                rst_d[app]['company/%s' % cid] = {}
         except:
             print(str(sys.exc_info()))
-    for app, cids in company_id_d.items():
-        for cid in cids:
-            meter_id_d['%s/%s' % (app, cid)] = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
-    for app, cids in company_id_d.items():
-        for cid in cids:
-            price_d['%s/%s' % (app, cid)] = sql_get_mids_cids_or_price(cid, option='price', app=app)
-    return [company_id_d, meter_id_d, price_id]
+    for app in rst_d.keys():
+        for cid in rst_d[app].keys():
+            rst_d[app][cid] = {}
+            rst_d[app][cid]['meter_ids'] = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
+    for app in rst_d.keys():
+        for cid in rst_d[app].keys():
+            rst_d[app][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
+    return rst_d
 
 
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsyd', comp='company'):
@@ -473,6 +530,30 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsyd', comp='com
         return tmp_d
     elif option == 'company_id':
         sql = 'select id from company;'
+        try:
+            rst = worker(sql)
+        except:
+            print('sql query my_except')
+            return []
+        if rst:
+            rst_int = [int(i[0]) for i in rst]
+        else:
+            rst_int = []
+        return rst_int
+    elif option == 'workshop_id':
+        sql = 'select id from workshop;'
+        try:
+            rst = worker(sql)
+        except:
+            print('sql query my_except')
+            return []
+        if rst:
+            rst_int = [int(i[0]) for i in rst]
+        else:
+            rst_int = []
+        return rst_int
+    elif option == 'equipment_id':
+        sql = 'select id from equipment;'
         try:
             rst = worker(sql)
         except:

@@ -69,7 +69,7 @@ class MySQLdb_pool(object):
             else:
                 conn = self._pool.get()
                 self.cnx_now -= 1
-            # conn.ping()
+            conn.ping()
             if not (conn and conn.open):
                 print('pop a broken conn, replace it to valid conn at the out gateway...')
                 return self.CreateConnection()
@@ -132,8 +132,11 @@ class MySQLWrapper(object):
             self.pool.returnConnection(con)
             return res
         except:
-            if con:
+            import sys
+            print(str(sys.exc_info()))
+            if con and con.open:
                 con.rollback()
+                # TODO: it is not easy to find out 'server go away' situation,
             self.pool.returnConnection(con)
             return None
 
