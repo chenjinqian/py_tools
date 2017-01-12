@@ -58,6 +58,7 @@ from gevent.pool import Pool as gpol
 # pp4 = ppol(4)
 
 vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2]]
+# TODO: kvarhi, kvarhe and q
 ckps_default = [0, 60*30, 60*60*3]
 rsrv_default = 'redis:meter'
 # app_lst_default = [i for i in cfgd.keys() if 'mysql' in i]
@@ -72,7 +73,8 @@ app_lst_default = ['mysql:app_eemsii',
                    'mysql:app_eemsyd',]
 
 sql_meta_info_default = sql_get_all_info(app_lst_default)
-# not global, should be defined in main
+# sql_meta_info_default = {}
+# # not global, should be defined in main
 his_d_default = {}
 
 
@@ -91,7 +93,7 @@ def test1(n=2, d={}):
     return test1((n - 1), {})
 
 
-def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, pli_d=pli_d_default):
+def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, sql_meta_info=sql_meta_info_default):
     # TODO: pttl unit is hour.
     def mk_his_key(mid, t, ckp_ts, no_mid=False):
         # return '%s_%s_%s_%s_%s_%s' % (app, comp, cid, mid, t, ckp_ts)
@@ -159,16 +161,31 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ck
             return [key_1, incr]
 
     fee_d_default = {}
-    # fees_k is like {'mysql:app_eemsyd/company/3/20170111_214500':{}}
-    def reduce_mid(vrs_extr_one, fee_d=fee_d_default, price_d, pli_d=pli_d):
+    # fees_k is like {'mysql:app_eemscr/company/3/20170111_214500':{}}
+    def reduce_mid(vrs_extr_one, fee_d=fee_d_default, sql_meta_info=sql_meta_info):
+        def add_up_dic(d1, d2):
+            for k1, v1 in d1.items():
+                v2 = d2[k1] if k1 in d2 else None
+                if type(v1) == str:
+                    v_add = v1
+                else:
+                    v_add = v1 + v2 if (v1 and v2) else (v1 or v2)
+                v1[k1] = v_add
+            return v1
+
         # TODO: should merge fee_d and pli_d into one dict.
         ks, vr_d = vrs_extr_one
-        new_cid_fee_key, meter_id = key_get_out(ks)
+        # # vrs_extr_one is like[meter_info_str, dict]
+        # # ks is like 'mysql:app_eemscr/company/3/20170101_121500'
+        cid_fee_key, meter_id = key_get_out(ks)
         cid = key_get_out(ks, 2)[1]
-        fee_one = apply_pli(vr_d, price_d[app][cid], pli_d[meter_id])
-        if not new_cid_key in fee_d_default:
-            pass
-        pass
+        fee_meter_new = apply_pli(vr_d, price_d[app][cid], pli_d[meter_id])
+        if not cid_fee_key in fee_d:
+            fee_d[cid_fee_key] = fee_meter_new
+        else:
+            fee_meter_exist_one = fee_d[cid_fee_key]
+            fee_d[cid_fee_key] = add_up_dic(fee_meter_exist_one, fee_meter_new)
+        return fee_meter_new
 
     t_s = time.time()
     # print(len(mk_redis_tasks(mids, ckps)))
@@ -180,45 +197,28 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemsyd', comp='company', ckps=ck
     else:
         redis_rcds = []
     print(time.time() - t_s)
-    return vrs_extr
-
-
-def apply_pli(vr_d, price_d, pli_d):
-    tmp_d = {}
-    tmp_d['spfv'] = price_d['hours'][int(vr_d['times'][9:11])]
-    rate = price_d[tmp_d['spfv']]
-    if not pli_d['use_power'] == '0' or vr_d['kwhttli'] is None :
-        tmp_d['kwh'] = vr_d['pttl'][0] # pttl have two value as list, p+ and p-
-    else:
-        tmp_d['kwh'] = vr_d['kwhttli']
-    if not tmp_d['kwh'] is None:
-        tmp_d['charge'] = rate * tmp_d['kwh']
-    else:
-        tmp_d['charge']
-    if not pli_d['use_power'] == 0:
-        pass
-
-def key_get_out(ks, n=3):
-    ss = ks.split('/')[:n] + ks.split('/')[n+1:]
-    s_out = ks.split('/')[n]
-    new_s = ''
-    for i in ss:
-        new_s += i + '/'
-    return new_s[:-1], s_out
+    # return vrs_extr
+    return fee_d_default
 
 # testing data:
-table_elec = "(('stat_time', 'datetime', 'NO', 'PRI', None, ''),
- ('company_id', 'smallint(5) unsigned', 'NO', 'PRI', None, ''),
- ('kwh', 'double', 'NO', '', None, ''),
- ('spfv', 'char(1)', 'NO', '', None, ''),
- ('charge', 'double', 'NO', '', None, ''))
-"
+# elec_ table is like
+# (('stat_time', 'datetime', 'NO', 'PRI', None, ''),
+#  ('company_id', 'smallint(5) unsigned', 'NO', 'PRI', None, ''),
+#  ('kwh', 'double', 'NO', '', None, ''),
+#  ('spfv', 'char(1)', 'NO', '', None, ''),
+#  ('charge', 'double', 'NO', '', None, ''),
+#  ('p', 'double', 'YES', '', None, ''),
+#  ('kwhi', 'double', 'YES', '', None, ''),
+#  ('kwhe', 'double', 'YES', '', None, ''),
+#  ('q', 'double', 'YES', '', None, ''),
+#  ('kvarhi', 'double', 'YES', '', None, ''),
+#  ('kvarhe', 'double', 'YES', '', None, ''))
 
-vr_ext_one =  ['mysql:app_eemsyd/company/3/2166/20170111_194500',
-               {'kwhttle': None,
-                'kwhttli': None,
-                'pttl': [194.30324470, 0.0],
-                'times': '20170111_193000'}],
+vr_ext_one = ['mysql:app_eemscr/company/3/2166/20170111_194500',
+              {'kwhttle': None,
+               'kwhttli': None,
+               'pttl': [194.30324470, 0.0],
+               'times': '20170111_193000'}]
 
 comp_info_d_one = {'meter_ids': [34758, 2159, 2166, 2024, 2016, 2019, 2125, 2000, 2075, 2106],
                    'price': {'f': 0.5846,
@@ -242,7 +242,53 @@ pli_one = {'ctnum': '2',
              'use_energy': '0',
              'use_power': '0'}
 
+fee_d_one = {'charge': 113.58967685162,
+             'kwhe': 0.0,
+             'kwhi': 194.3032447,
+             'p': 777.2129788,
+             'spfv': 'f',
+             'times': '20170111_193000'}
 
+
+def apply_pli(vr_d, price_d, pli_d):
+    tmp_d = {}
+    # print(vr_d, price_d, pli_d)
+    index = 3
+    tmp_d['spfv'] = price_d['hours'][int(vr_d['times'][9:11]) - 1]
+    rate = price_d[tmp_d['spfv']]
+    if not pli_d['use_power'] == '0' or vr_d['kwhttli'] is None:
+        # TODO: Notice, here, change pli_ if data not avaible.
+        tmp_d['kwhi'] = vr_d['pttl'][0] # pttl have two value as list, p+ and p-
+        tmp_d['kwhe'] = vr_d['pttl'][1]
+        # tmp_d['kvarhi'] = vr_d['qttl'][0]
+        # tmp_d['kvarhi'] = vr_d['qttl'][1]
+    else:
+        tmp_d['kwhi'] = vr_d['kwhttli']
+        tmp_d['kwhe'] = vr_d['kwhttle']
+        # tmp_d['kvarhi'] = vr_d['kvarhttli']
+        # tmp_d['kvarhe'] = vr_d['kvarhttle']
+    if not pli_d['use_energy'] == '0':
+        tmp_d['p'] = vr_d['kwhttli'] # pttl have two value as list, p+ and p-
+        # tmp_d['q'] = vr_d['kvarhttli']
+    else:
+        # TODO: confirm p add up method.
+        tmp_d['p'] = (vr_d['pttl'][0] - vr_d['pttl'][1]) * 4 # Notice: 60 * 60 / interval
+        # tmp_d['q'] = (vr_d['qttl'][0] + vr_d['qttl'][1]) * 4
+    if not tmp_d['kwhi'] is None:
+        tmp_d['charge'] = rate * tmp_d['kwhi']
+    else:
+        tmp_d['charge'] = None
+    tmp_d['times'] = vr_d['times']
+    return tmp_d
+
+
+def key_get_out(ks, n=3):
+    ss = ks.split('/')[:n] + ks.split('/')[n+1:]
+    s_out = ks.split('/')[n]
+    new_s = ''
+    for i in ss:
+        new_s += i + '/'
+    return new_s[:-1], s_out
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
@@ -497,7 +543,7 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
 
 def sql_get_all_info(app_lst=app_lst_default):
     pli_d_default = get_all_fee_policy()
-    company_id_d = {} # {'mysql:app_eemsyd':[],}
+    company_id_d = {} # {'mysql:app_eemscr':[],}
     rst_d = {}
     for app in app_lst:
         import os, sys
@@ -518,16 +564,16 @@ def sql_get_all_info(app_lst=app_lst_default):
             rst_d[app][cid]['meter_id'] = {}
             for mid in meter_id_lst:
                 if mid in pli_d_default:
-                    rst_d[app][cid]['meter_id'][mid] = pli_d_default[mid]
+                    rst_d[app][cid]['meter_id'][str(mid)] = pli_d_default[str(mid)]
                 else:
-                    rst_d[app][cid]['meter_id'][mid] = {}
+                    rst_d[app][cid]['meter_id'][str(mid)] = {}
     for app in rst_d.keys():
         for cid in rst_d[app].keys():
             rst_d[app][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
     return rst_d
 
 
-def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsyd', comp='company'):
+def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='company'):
     worker = mysql_workers_d[app]
     if option == 'price':
         sql = 'select hours, price_p, price_f, price_v  from price_policy  where company_id=%s' % cid
@@ -642,7 +688,7 @@ def how_about_sleep(shift=180, interval=900, real_sleep=True):
     return sleep_for
 
 
-def sql_op(ha, a, hb, b, cmpid='2017', app='eemsyd', comp='company'):
+def sql_op(ha, a, hb, b, cmpid='2017', app='eemscr', comp='company'):
     # TODO: insert one sql into sql.
     # invalide.
     dif_a = ha - a
