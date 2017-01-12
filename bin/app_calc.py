@@ -188,9 +188,11 @@ def apply_pli(vr_d, price_d, pli_d):
     tmp_d['spfv'] = price_d['hours'][int(vr_d['times'][9:11])]
     rate = price_d[tmp_d['spfv']]
     if not pli_d['use_power'] == '0':
-        tmp_d['kwh'] = vr_d['pttl'][0]
+        tmp_d['kwh'] = vr_d['pttl'][0] # pttl have two value as list, p+ and p-
     else:
         tmp_d['kwh'] = vr_d['kwhttli']
+    if not tmp_d['kwh'] is None:
+        tmp_d['charge'] = rate * tmp_d['kwh']
     if not pli_d['use_power'] == 0:
         pass
 
