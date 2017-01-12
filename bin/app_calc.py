@@ -72,8 +72,8 @@ app_lst_default = ['mysql:app_eemsii',
                    'mysql:app_eemsman',
                    'mysql:app_eemsyd',]
 
-sql_meta_info_default = sql_get_all_info(app_lst_default)
-# sql_meta_info_default = {}
+# sql_meta_info_default = sql_get_all_info(app_lst_default)
+# TODO: 15 min init and end of loop
 # # not global, should be defined in main
 his_d_default = {}
 
@@ -102,7 +102,7 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
         return '%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts)
 
     import time
-    one_comp_mids = sql_get_comp_mids_or_price(cid, app=app, comp=comp)
+    one_comp_mids = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'].keys()
     # TODO: use global dict, cache at first 15 mins
     print('mids is %s' % one_comp_mids)
     flag_key = mk_his_key(0, 0, 0)
@@ -179,7 +179,9 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
         # # ks is like 'mysql:app_eemscr/company/3/20170101_121500'
         cid_fee_key, meter_id = key_get_out(ks)
         cid = key_get_out(ks, 2)[1]
-        fee_meter_new = apply_pli(vr_d, price_d[app][cid], pli_d[meter_id])
+        price_info_d = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid][meter_id]['price']
+        pli_info_d = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'][meter_id]
+        fee_meter_new = apply_pli(vr_d, price_info_d, pli_info_d)
         if not cid_fee_key in fee_d:
             fee_d[cid_fee_key] = fee_meter_new
         else:
@@ -542,7 +544,8 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
 
 
 def sql_get_all_info(app_lst=app_lst_default, comp='company'):
-    mids_pli_d = get_all_fee_policy()
+    # all comp types.
+    Mids_pli_d = get_all_fee_policy()
     company_id_d = {} # {'mysql:app_eemscr':[],}
     rst_d = {}
     for app in app_lst:
