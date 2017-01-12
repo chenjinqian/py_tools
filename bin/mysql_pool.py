@@ -121,23 +121,29 @@ class MySQLWrapper(object):
             if not (con and con.open):
                 res = -1
                 print("None connection type. ")
+                self.pool.returnConnection(None)
             else:
                 c = con.cursor()
                 c.execute(q)
                 res = c.fetchall()
                 if commit:
                     con.commit()
+                self.pool.returnConnection(con)
             # # should I add this line? will be much longer.
             # c.close()
-            self.pool.returnConnection(con)
             return res
         except:
             import sys
             print(str(sys.exc_info()))
             if con and con.open:
-                con.rollback()
-                # TODO: it is not easy to find out 'server go away' situation, should I just return None back?
-            self.pool.returnConnection(con)
+                try:
+                    con.rollback()
+                    con.close()
+                    # TODO: it is not easy to find out 'server go away' situation, should I just return None back?
+                    # raise errors?
+                except:
+                    pass
+            self.pool.returnConnection(None)
             return None
 
 

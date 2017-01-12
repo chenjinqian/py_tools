@@ -74,7 +74,7 @@ app_lst_default = ['mysql:app_eemsii',
 sql_meta_info_default = sql_get_all_info(app_lst_default)
 # not global, should be defined in main
 his_d_default = {}
-pli_d_default = get_all_fee_policy()
+
 
 # fee_pli_d = get_all_fee_policy()
 
@@ -496,6 +496,7 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
 
 
 def sql_get_all_info(app_lst=app_lst_default):
+    pli_d_default = get_all_fee_policy()
     company_id_d = {} # {'mysql:app_eemsyd':[],}
     rst_d = {}
     for app in app_lst:
@@ -513,7 +514,13 @@ def sql_get_all_info(app_lst=app_lst_default):
     for app in rst_d.keys():
         for cid in rst_d[app].keys():
             rst_d[app][cid] = {}
-            rst_d[app][cid]['meter_ids'] = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
+            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
+            rst_d[app][cid]['meter_id'] = {}
+            for mid in meter_id_lst:
+                if mid in pli_d_default:
+                    rst_d[app][cid]['meter_id'][mid] = pli_d_default[mid]
+                else:
+                    rst_d[app][cid]['meter_id'][mid] = {}
     for app in rst_d.keys():
         for cid in rst_d[app].keys():
             rst_d[app][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
