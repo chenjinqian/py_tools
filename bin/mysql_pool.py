@@ -136,7 +136,7 @@ class MySQLWrapper(object):
             print(str(sys.exc_info()))
             if con and con.open:
                 con.rollback()
-                # TODO: it is not easy to find out 'server go away' situation,
+                # TODO: it is not easy to find out 'server go away' situation, should I just return None back?
             self.pool.returnConnection(con)
             return None
 
