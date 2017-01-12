@@ -271,8 +271,9 @@ def apply_pli(vr_d, price_d, pli_d):
     index = 3
     tmp_d['spfv'] = price_d['hours'][int(vr_d['_times'][9:11]) - 1]
     rate = price_d[tmp_d['spfv']]
-    if not pli_d['use_power'] == '0':
+    if pli_d['use_energy'] == '0':
         # TODO: Notice, here, change pli_ if data not avaible.
+        # default value changed to 1.
         tmp_d['kwhi'] = vr_d['pttl'][0] # pttl have two value as list, p+ and p-
         tmp_d['kwhe'] = vr_d['pttl'][1]
         # tmp_d['kvarhi'] = vr_d['qttl'][0]
@@ -282,7 +283,7 @@ def apply_pli(vr_d, price_d, pli_d):
         tmp_d['kwhe'] = vr_d['kwhttle']
         # tmp_d['kvarhi'] = vr_d['kvarhttli']
         # tmp_d['kvarhe'] = vr_d['kvarhttle']
-    if not pli_d['use_energy'] == '0':
+    if  pli_d['use_power'] == '0':
         tmp_d['p'] = vr_d['kwhttli'] # pttl have two value as list, p+ and p-
         # tmp_d['q'] = vr_d['kvarhttli']
     else:
