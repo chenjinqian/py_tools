@@ -10,6 +10,7 @@ import read_config as rcfg
 import mysql_pool as mpol
 import redis
 import time
+import itertoolsimport itertools
 
 
 def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
@@ -73,25 +74,10 @@ app_lst_default = ['mysql:app_eemsii',
                    'mysql:app_eemsyd',]
 
 # sql_meta_info_default = sql_get_all_info(app_lst_default)
-# TODO: 15 min init and end of loop
+# TODO: 15 min init and end of loop, inti values
 # # not global, should be defined in main
-his_d_default = {}
-
-
+# his_d_default = {}
 # fee_pli_d = get_all_fee_policy()
-
-def test1(n=2, d={}):
-    a= 0
-    print(a, d)
-    if not a:
-        a = a + 2
-    if not d:
-        d['a'] = a
-    time.sleep(0.3)
-    if n < 0:
-        return a
-    return test1((n - 1), {})
-
 
 def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, sql_meta_info=sql_meta_info_default):
     # TODO: pttl unit is hour.
@@ -198,13 +184,15 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
         tp = gpol(n)
         # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
         redis_rcds = tp.map(rd_acc, mk_redis_tasks())
+        t_b = time.time()
         vrs_extr = [i for i in map(vrs_parse, redis_rcds) if i]
         fee_lst = map(fee_reduce_mid, vrs_extr)
+        print('cpu time %s' % (time.time() - t_b))
     else:
         redis_rcds = []
     print(time.time() - t_s)
     # return vrs_extr
-    return [vrs_extr, fee_lst, fee_d_default]
+    return [redis_rcds, vrs_extr, fee_lst, fee_d_default]
 
 
 # def test_map1(lst):
@@ -560,7 +548,7 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
 
 def sql_get_all_info(app_lst=app_lst_default, comp='company'):
     # all comp types.
-    Mids_pli_d = get_all_fee_policy()
+    mids_pli_d = get_all_fee_policy()
     company_id_d = {} # {'mysql:app_eemscr':[],}
     rst_d = {}
     for app in app_lst:
@@ -689,7 +677,7 @@ def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=Fal
     for mid in  mids:
         p.hget(lk1, mid)
     fee_plis = p.execute()
-    for mid, pli in zip(mids, fee_plis):
+    for mid, pli in itertools.izip(mids, fee_plis):
         pli_d[mid] = pli if raw else parse_pli(pli)
     return pli_d
 
