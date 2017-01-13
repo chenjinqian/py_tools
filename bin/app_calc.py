@@ -473,7 +473,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
     return rst_d
 
 
-def apply_pli(vr_d, price_d, pli_d):
+def apply_pli(vr_d, price_d, pli_d, interval=900):
     if not vr_d:
         return {}
     tmp_d = {}
@@ -481,11 +481,13 @@ def apply_pli(vr_d, price_d, pli_d):
     index = 3
     tmp_d['spfv'] = price_d['hours'][int(vr_d['_times'][9:11]) - 1]
     rate = price_d[tmp_d['spfv']]
+    trans_factor = float(60 * 60 / interval)  # when caculate
     if pli_d['use_energy'] == '0':
         # TODO: Notice, here, change pli_ if data not avaible.
         # default value changed to 1.
-        tmp_d['kwhi'] = vr_d['pttl'][0] # pttl have two value as list, p+ and p-
-        tmp_d['kwhe'] = vr_d['pttl'][1]
+        # pttl have two value as list, p+ and p-
+        tmp_d['kwhi'] = None if vr_d['pttl'][0] is None else (vr_d['pttl'][0] / trans_factor)
+        tmp_d['kwhe'] = None if vr_d['pttl'][1] is None else (vr_d['pttl'][1] / trans_factor)
         # tmp_d['kvarhi'] = vr_d['qttl'][0]
         # tmp_d['kvarhi'] = vr_d['qttl'][1]
     else:
@@ -494,11 +496,11 @@ def apply_pli(vr_d, price_d, pli_d):
         # tmp_d['kvarhi'] = vr_d['kvarhttli']
         # tmp_d['kvarhe'] = vr_d['kvarhttle']
     if  pli_d['use_power'] == '0':
-        tmp_d['p'] = vr_d['kwhttli'] # pttl have two value as list, p+ and p-
-        # tmp_d['q'] = vr_d['kvarhttli']
+        tmp_d['p'] = vr_d['kwhttli'] * trans_factor
+        # tmp_d['q'] = vr_d['kvarhttli'] * trans_factor
     else:
         # TODO: confirm p add up method.
-        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or  vr_d['pttl'][1] is None) else None
+        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
         # Notice: 60 * 60 / interval
         # tmp_d['q'] = (vr_d['qttl'][0] + vr_d['qttl'][1]) * 4
     if not tmp_d['kwhi'] is None:
