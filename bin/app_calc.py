@@ -10,7 +10,7 @@ import read_config as rcfg
 import mysql_pool as mpol
 import redis
 import time
-import itertoolsimport itertools
+import itertools
 
 
 def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
@@ -70,7 +70,7 @@ app_lst_default = ['mysql:app_eemsii',
                    'mysql:app_eemsop',
                    'mysql:app_eemssec',
                    'mysql:app_eemscr',
-                   'mysql:app_eemsman',
+                   # 'mysql:app_eemsman',
                    'mysql:app_eemsyd',]
 
 # sql_meta_info_default = sql_get_all_info(app_lst_default)
@@ -129,6 +129,7 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
         # info_str = 'app%s_comp%s_%s_%s_%s_%s' % (app,comp, cid, mid, t, rlt_4[2][1])
         meta_info = [mk_his_key(mid, t, rlt_4[2][0]), mk_his_key(mid, t, rlt_4[2][1])]
         # rlt_4[2] is ts_ckp, will always have values, like ['20170111_120000', '20170111_121500']
+        print('mid', mid)
         return [meta_info, rlt_4]
 
     def vrs_parse(sect): # use vrs_s outer_side info
@@ -192,7 +193,8 @@ def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ck
         redis_rcds = []
     print(time.time() - t_s)
     # return vrs_extr
-    return [redis_rcds, vrs_extr, fee_lst, fee_d_default]
+    # return [redis_rcds, vrs_extr, fee_lst, fee_d_default]
+    return fee_lst
 
 
 # def test_map1(lst):
@@ -431,6 +433,7 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
 
     # get all result, dict or keys
     [l_dok, r_dok] = p.execute()
+    # left_dictory_or_keys
     if not left_null:
         left_values = l_dok
         try:
@@ -559,10 +562,11 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
             # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
             # TODO: get workshop and equipment fees
             rst_d['%s/%s' % (app, comp)] = {}
+            print('%s/%s' % (app, comp))
             for cid in cid_list:
                 rst_d['%s/%s' % (app, comp)]['%s' % cid] = {}
         except:
-            print(str(sys.exc_info()))
+            print(str(sys.exc_info()), rst_d.keys())
     for ap_comp in rst_d.keys():
         for cid in rst_d[ap_comp].keys():
             rst_d[ap_comp][cid] = {}
@@ -644,9 +648,9 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='com
 # 2s
 # print(time.time() - ta)
 
-def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
     mids = get_mids_all(rsrv=rsrv, lk1=lk1,raw=raw)
-    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw)
+    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw, old=old)
 
 
 def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
@@ -655,7 +659,7 @@ def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
     return mids
 
 
-def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
     def parse_pli(sss):
         d = {}
         if not sss:
@@ -669,7 +673,7 @@ def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=Fal
                 # print(s)
                 continue
         return d
-    pli_d = {}
+    pli_d = old
     r = redis_cursors_d[rsrv]
     p = r.pipeline(transaction=False)
     if type(mids) == int:
