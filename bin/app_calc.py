@@ -13,6 +13,15 @@ import time
 import itertools
 
 
+from gevent.pool import Pool as gpol
+from gevent import monkey;monkey.patch_all()
+
+# from multiprocessing.dummy import Pool as tpol
+# from multiprocessing import Pool as ppol
+# tp4 = tpol(4)
+# gp4 = gpol(4)
+# pp4 = ppol(4)
+
 def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
     """read config files, and make mysql connection pool instance as dict."""
     cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
@@ -47,22 +56,10 @@ cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', conv
 mysql_workers_d = mk_mp_d()
 redis_cursors_d = mk_rp_d()
 
-
-# from multiprocessing.dummy import Pool as tpol
-# tp4 = tpol(4)
-from gevent.pool import Pool as gpol
-from gevent import monkey;monkey.patch_all()
-
-# from gevent import monkey
-# gp4 = gpol(4)
-# from multiprocessing import Pool as ppol
-# pp4 = ppol(4)
-
 vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2]]
 # TODO: kvarhi, kvarhe and q
 ckps_default = [0, 60*30, 60*60*3]
 rsrv_default = 'redis:meter'
-# app_lst_default = [i for i in cfgd.keys() if 'mysql' in i]
 app_lst_default = ['mysql:app_eemsii',
                    # 'mysql:app_eemsdemo',
                    # 'mysql:meterinfo',
@@ -73,228 +70,11 @@ app_lst_default = ['mysql:app_eemsii',
                    # 'mysql:app_eemsman',
                    'mysql:app_eemsyd',]
 
-# sql_meta_info_default = sql_get_all_info(app_lst_default)
 # TODO: 15 min init and end of loop, inti values
 # # not global, should be defined in main
+# sql_meta_info_default = sql_get_all_info(app_lst_default)
 # his_d_default = {}
 # fee_pli_d = get_all_fee_policy()
-
-def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, sql_meta_info=sql_meta_info_default):
-    # TODO: pttl unit is hour.
-    def mk_his_key(mid, t, ckp_ts, no_mid=False):
-        # return '%s_%s_%s_%s_%s_%s' % (app, comp, cid, mid, t, ckp_ts)
-        if no_mid:
-            return '%s/%s/%s/%s' % (app, comp, cid, ckp_ts)
-        return '%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts)
-
-    import time
-    one_comp_mids = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'].keys()
-    # TODO: use global dict, cache at first 15 mins
-    print('mids is %s' % one_comp_mids)
-    flag_key = mk_his_key(0, 0, 0)
-    if not flag_key in his_d:
-        his_d[flag_key] = 'inited'
-        init_history = True
-    else:
-        init_history = False
-
-    def thread_one(mids, t): # use local varable
-        if  not str(str(t) +'_'+ str(mid)) in his_d:
-            ic0, hi0 = calc_meter_acc(mid, t + interval, vrs_s=vrs_s)
-            # print(hi0)
-            his_d[str(t) +'_'+ str(mid)] = hi0
-        ic, hi = calc_meter_acc(mid, t, history=his_d[str(t) + '_' + str(mid)], vrs_s=vrs_s)
-        # print(ic, hi)
-        his_d[str(t) +'_'+ str(mid)] = hi
-        return ic
-    def t_acc(lst):
-        return thread_one(*lst)
-    def mk_redis_tasks(mids=one_comp_mids, ckps=ckps, cid=cid, interval=interval):
-        tasks = []
-        if init_history:
-            print('init mk_redis_tasks')
-            for t in ckps:
-                for mid in mids:
-                    one_task = [[cid, mid, t+interval, True], [cid, mid, t, False]]
-                    tasks += one_task
-        else:
-            tasks = [[cid, mid, t, False] for mid in mids for t in ckps]
-        return tasks
-
-    def rd_acc(lst):
-        return rd(*lst)
-
-    def rd(cid, mid, t, left_null):
-        rlt_4 = get_near_keys(mid, t, interval=interval, rsrv=rsrv, left_null=left_null)
-        # info_str = 'app%s_comp%s_%s_%s_%s_%s' % (app,comp, cid, mid, t, rlt_4[2][1])
-        meta_info = [mk_his_key(mid, t, rlt_4[2][0]), mk_his_key(mid, t, rlt_4[2][1])]
-        # rlt_4[2] is ts_ckp, will always have values, like ['20170111_120000', '20170111_121500']
-        print('mid', mid)
-        return [meta_info, rlt_4]
-
-    def vrs_parse(sect): # use vrs_s outer_side info
-        [[key_0, key_1], [v_left, v_near, ts_ckp, v_right]] = sect
-        # TODO: try
-        # print(key_0, key_1)
-        if not key_0 in his_d:
-            ckp_values = kwh_interval(v_near, history=[], vrs_s=vrs_s)
-            his_d[key_1] = ckp_values
-            return []
-        else:
-            ckp_values = kwh_interval(v_near, history=his_d[key_0], vrs_s=vrs_s)
-            his_d[key_1] = ckp_values
-            # print(ckp_values)
-            incr = incr_sumup(his_d[key_0], v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
-            return [key_1, incr]
-
-    fee_d_default = {}
-    # fees_k is like {'mysql:app_eemscr/company/3/20170111_214500':{}}
-    def fee_reduce_mid(vrs_extr_one, fee_d=fee_d_default, sql_meta_info=sql_meta_info):
-        def add_up_dic(d1, d2):
-            for k1, v1 in d1.items():
-                v2 = d2[k1] if k1 in d2 else None
-                if type(v1) == str:
-                    v_add = v1
-                else:
-                    v_add = v1 + v2 if (v1 and v2) else (v1 or v2)
-                d1[k1] = v_add
-            return d1
-
-        # TODO: should merge fee_d and pli_d into one dict.
-        ks, vr_d = vrs_extr_one
-        # # vrs_extr_one is like[meter_info_str, dict]
-        # # ks is like 'mysql:app_eemscr/company/3/20170101_121500'
-        cid_fee_key, meter_id = key_get_out(ks)
-        cid = key_get_out(ks, 2)[1]
-        price_info_d = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['price']
-        pli_info_d   = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'][meter_id]
-        # print(vr_d, price_info_d, pli_info_d)
-        # time.sleep(1000)
-        # print(vr_d)
-        fee_meter_new = apply_pli(vr_d, price_info_d, pli_info_d)
-        if not cid_fee_key in fee_d:
-            fee_d[cid_fee_key] = fee_meter_new
-        else:
-            fee_meter_exist_one = fee_d[cid_fee_key]
-            fee_d[cid_fee_key] = add_up_dic(fee_meter_exist_one, fee_meter_new)
-        return fee_meter_new
-
-    t_s = time.time()
-    # print(len(mk_redis_tasks(mids, ckps)))
-    if mul:
-        tp = gpol(n)
-        # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
-        redis_rcds = tp.map(rd_acc, mk_redis_tasks())
-        t_b = time.time()
-        vrs_extr = [i for i in map(vrs_parse, redis_rcds) if i]
-        fee_lst = map(fee_reduce_mid, vrs_extr)
-        print('cpu time %s' % (time.time() - t_b))
-    else:
-        redis_rcds = []
-    print(time.time() - t_s)
-    # return vrs_extr
-    # return [redis_rcds, vrs_extr, fee_lst, fee_d_default]
-    return fee_lst
-
-
-# def test_map1(lst):
-#     return sum(lst)
-
-# t1 = map(test_map1, [[1,2,3,5], [3,4,5,]])
-
-
-# testing data:
-# elec_ table is like
-# (('stat_time', 'datetime', 'NO', 'PRI', None, ''),
-#  ('company_id', 'smallint(5) unsigned', 'NO', 'PRI', None, ''),
-#  ('kwh', 'double', 'NO', '', None, ''),
-#  ('spfv', 'char(1)', 'NO', '', None, ''),
-#  ('charge', 'double', 'NO', '', None, ''),
-#  ('p', 'double', 'YES', '', None, ''),
-#  ('kwhi', 'double', 'YES', '', None, ''),
-#  ('kwhe', 'double', 'YES', '', None, ''),
-#  ('q', 'double', 'YES', '', None, ''),
-#  ('kvarhi', 'double', 'YES', '', None, ''),
-#  ('kvarhe', 'double', 'YES', '', None, ''))
-
-vr_ext_one = ['mysql:app_eemscr/company/3/2166/20170111_194500',
-              {'kwhttle': None,
-               'kwhttli': None,
-               'pttl': [194.30324470, 0.0],
-               '_times': '20170111_193000'}]
-
-comp_info_d_one = {'meter_ids': [34758, 2159, 2166, 2024, 2016, 2019, 2125, 2000, 2075, 2106],
-                   'price': {'f': 0.5846,
-                             'hours': 'vvvvvvvvfpppfffffffpppff',
-                             'p': 0.9329,
-                             'v': 0.3167}}
-
-pli_one = {'ctnum': '2',
-             'ctr': '10.0',
-             'dev_mac': '120000af6b3a',
-             'dev_model': 'pb600',
-             'gmid': '35545',
-             'kva': '800.0',
-             'meter_sn': '',
-             'ptr': '100.0',
-             'r_ia': '10.0',
-             'r_kwhttli': '1000.0',
-             'r_pa': '1000.0',
-             'r_ua': '100.0',
-             'tc': '800.0',
-             'use_energy': '0',
-             'use_power': '0'}
-
-fee_d_one = {'charge': 113.58967685162,
-             'kwhe': 0.0,
-             'kwhi': 194.3032447,
-             'p': 777.2129788,
-             'spfv': 'f',
-             '_times': '20170111_193000'}
-
-
-def apply_pli(vr_d, price_d, pli_d):
-    if not vr_d:
-        return {}
-    tmp_d = {}
-    # print(vr_d, price_d, pli_d)
-    index = 3
-    tmp_d['spfv'] = price_d['hours'][int(vr_d['_times'][9:11]) - 1]
-    rate = price_d[tmp_d['spfv']]
-    if pli_d['use_energy'] == '0':
-        # TODO: Notice, here, change pli_ if data not avaible.
-        # default value changed to 1.
-        tmp_d['kwhi'] = vr_d['pttl'][0] # pttl have two value as list, p+ and p-
-        tmp_d['kwhe'] = vr_d['pttl'][1]
-        # tmp_d['kvarhi'] = vr_d['qttl'][0]
-        # tmp_d['kvarhi'] = vr_d['qttl'][1]
-    else:
-        tmp_d['kwhi'] = vr_d['kwhttli']
-        tmp_d['kwhe'] = vr_d['kwhttle']
-        # tmp_d['kvarhi'] = vr_d['kvarhttli']
-        # tmp_d['kvarhe'] = vr_d['kvarhttle']
-    if  pli_d['use_power'] == '0':
-        tmp_d['p'] = vr_d['kwhttli'] # pttl have two value as list, p+ and p-
-        # tmp_d['q'] = vr_d['kvarhttli']
-    else:
-        # TODO: confirm p add up method.
-        tmp_d['p'] = (vr_d['pttl'][0] - vr_d['pttl'][1]) * 4 # Notice: 60 * 60 / interval
-        # tmp_d['q'] = (vr_d['qttl'][0] + vr_d['qttl'][1]) * 4
-    if not tmp_d['kwhi'] is None:
-        tmp_d['charge'] = rate * tmp_d['kwhi']
-    else:
-        tmp_d['charge'] = None
-    tmp_d['_times'] = vr_d['_times']
-    return tmp_d
-
-
-def key_get_out(ks, n=3):
-    ss = ks.split('/')[:n] + ks.split('/')[n+1:]
-    s_out = ks.split('/')[n]
-    new_s = ''
-    for i in ss:
-        new_s += i + '/'
-    return new_s[:-1], s_out
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
@@ -397,7 +177,6 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
         s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
         return s
     def time_lst(ckp_shift, left=True, one_key=True):
-        import time
         rst = []
         if left:
             ts_k1 = ts_ckp_int(-interval-ckp_shift)[:-2]
@@ -447,8 +226,11 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
         left_keys = sorted(left_keys_raw)
         left_key = left_keys[-1] if left_keys else None
         # print('left_key %s' % left_key)
-        p.hget('meterdata_%s_%s' % (mid, lk1), left_key)
-        [left_value] = p.execute()
+        if left_key:
+            p.hget('meterdata_%s_%s' % (mid, lk1), left_key)
+            [left_value] = p.execute()
+        else:
+            left_value = None
     if not right_null:
         right_values = r_dok
         right_key = sorted(right_values.keys())[0] if right_values else None
@@ -458,8 +240,11 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
         right_keys = sorted(right_keys_raw)
         right_key = right_keys[0] if right_keys else None
         # print('right_key %s' % right_key)
-        p.hget('meterdata_%s_%s' % (mid, rk1), right_key)
-        [right_value] = p.execute()
+        if right_key:
+            p.hget('meterdata_%s_%s' % (mid, rk1), right_key)
+            [right_value] = p.execute()
+        else:
+            right_value = None
     # left_key = None if not left_keys else left_keys[-1]
     # right_key = None if not right_keys else right_keys[1]
     # p.hget('meterdata_%s_%s' % (mid, lk1), left_key)
@@ -522,7 +307,6 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
             rt = [x0, y1  + (y2 - y1) * (x0 - x1) / float(x2 - x1)]
         return rt
 
-    import time
     # print('vrs is:%s' % (vrs))
     if not d:
         return history
@@ -549,38 +333,53 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     return rst
 
 
-def sql_get_all_info(app_lst=app_lst_default, comp='company'):
-    # all comp types.
-    mids_pli_d = get_all_fee_policy()
-    company_id_d = {} # {'mysql:app_eemscr':[],}
-    rst_d = {}
-    for app in app_lst:
-        import os, sys
-        try:
-            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
-            # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
-            # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
-            # TODO: get workshop and equipment fees
-            rst_d['%s/%s' % (app, comp)] = {}
-            print('%s/%s' % (app, comp))
-            for cid in cid_list:
-                rst_d['%s/%s' % (app, comp)]['%s' % cid] = {}
-        except:
-            print(str(sys.exc_info()), rst_d.keys())
-    for ap_comp in rst_d.keys():
-        for cid in rst_d[ap_comp].keys():
-            rst_d[ap_comp][cid] = {}
-            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
-            rst_d[ap_comp][cid]['meter_id'] = {}
-            for mid in meter_id_lst:
-                if str(mid) in mids_pli_d:
-                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = mids_pli_d[str(mid)]
-                else:
-                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = {}
-    for ap_comp in rst_d.keys():
-        for cid in rst_d[ap_comp].keys():
-            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
-    return rst_d
+def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
+    mids = get_mids_all(rsrv=rsrv, lk1=lk1,raw=raw)
+    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw, old=old)
+
+
+def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+    r = redis_cursors_d[rsrv]
+    mids = r.hkeys('sync_meterinfo')
+    return mids
+
+
+def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
+    def parse_pli(sss):
+        d = {}
+        if not sss:
+            return d
+        ss = [s for s in sss.split(',') if s]
+        for s in ss:
+            try:
+                k, v = s.split('=')
+                d[k] = v
+            except:
+                # print(s)
+                continue
+        return d
+    pli_d = old
+    r = redis_cursors_d[rsrv]
+    p = r.pipeline(transaction=False)
+    if type(mids) == int:
+        mids = [mids]
+    for mid in  mids:
+        p.hget(lk1, mid)
+    fee_plis = p.execute()
+    for mid, pli in itertools.izip(mids, fee_plis):
+        pli_d[mid] = pli if raw else parse_pli(pli)
+    return pli_d
+
+
+def how_about_sleep(shift=180, interval=900, real_sleep=True):
+    sleep_for_i = interval - (int(time.time()) % interval) + int(shift)
+    sleep_for = (sleep_for_i + abs(sleep_for_i)) / 2
+    print('sleeping for %s' % (sleep_for))
+    end_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time() + sleep_for))
+    print(end_time_str)
+    if real_sleep:
+        time.sleep(sleep_for)
+    return sleep_for
 
 
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='company'):
@@ -639,139 +438,280 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='com
         mids = []
     return [str(i) for i in mids if i]
 
-# mids_all = get_mids_all()
-# gp8  = gpol(1000)
-# ta  = time.time()
-# a13 = gp8.map(get_mids_fee_policy, mids_all)
-# 5s, with 64 gevent pool, 8s with 1000 gpol.
-# pli_all = get_all_fee_policy()
-# 2s
-# print(time.time() - ta)
 
-def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
-    mids = get_mids_all(rsrv=rsrv, lk1=lk1,raw=raw)
-    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw, old=old)
-
-
-def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
-    r = redis_cursors_d[rsrv]
-    mids = r.hkeys('sync_meterinfo')
-    return mids
-
-
-def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
-    def parse_pli(sss):
-        d = {}
-        if not sss:
-            return d
-        ss = [s for s in sss.split(',') if s]
-        for s in ss:
-            try:
-                k, v = s.split('=')
-                d[k] = v
-            except:
-                # print(s)
-                continue
-        return d
-    pli_d = old
-    r = redis_cursors_d[rsrv]
-    p = r.pipeline(transaction=False)
-    if type(mids) == int:
-        mids = [mids]
-    for mid in  mids:
-        p.hget(lk1, mid)
-    fee_plis = p.execute()
-    for mid, pli in itertools.izip(mids, fee_plis):
-        pli_d[mid] = pli if raw else parse_pli(pli)
-    return pli_d
+def sql_get_all_info(app_lst=app_lst_default, comp='company'):
+    # all comp types.
+    mids_pli_d = get_all_fee_policy()
+    company_id_d = {} # {'mysql:app_eemscr':[],}
+    rst_d = {}
+    for app in app_lst:
+        import os, sys
+        try:
+            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
+            # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
+            # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
+            # TODO: get workshop and equipment fees
+            rst_d['%s/%s' % (app, comp)] = {}
+            print('%s/%s' % (app, comp))
+            for cid in cid_list:
+                rst_d['%s/%s' % (app, comp)]['%s' % cid] = {}
+        except:
+            print(str(sys.exc_info()), rst_d.keys())
+    for ap_comp in rst_d.keys():
+        for cid in rst_d[ap_comp].keys():
+            rst_d[ap_comp][cid] = {}
+            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
+            rst_d[ap_comp][cid]['meter_id'] = {}
+            for mid in meter_id_lst:
+                if str(mid) in mids_pli_d:
+                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = mids_pli_d[str(mid)]
+                else:
+                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = {}
+    for ap_comp in rst_d.keys():
+        for cid in rst_d[ap_comp].keys():
+            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
+    return rst_d
 
 
-def how_about_sleep(shift=180, interval=900, real_sleep=True):
-    import time
-    sleep_for_i = interval - (int(time.time()) % interval) + int(shift)
-    sleep_for = (sleep_for_i + abs(sleep_for_i)) / 2
-    print('sleeping for %s' % (sleep_for))
-    end_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time() + sleep_for))
-    print(end_time_str)
-    if real_sleep:
-        time.sleep(sleep_for)
-    return sleep_for
+def apply_pli(vr_d, price_d, pli_d):
+    if not vr_d:
+        return {}
+    tmp_d = {}
+    # print(vr_d, price_d, pli_d)
+    index = 3
+    tmp_d['spfv'] = price_d['hours'][int(vr_d['_times'][9:11]) - 1]
+    rate = price_d[tmp_d['spfv']]
+    if pli_d['use_energy'] == '0':
+        # TODO: Notice, here, change pli_ if data not avaible.
+        # default value changed to 1.
+        tmp_d['kwhi'] = vr_d['pttl'][0] # pttl have two value as list, p+ and p-
+        tmp_d['kwhe'] = vr_d['pttl'][1]
+        # tmp_d['kvarhi'] = vr_d['qttl'][0]
+        # tmp_d['kvarhi'] = vr_d['qttl'][1]
+    else:
+        tmp_d['kwhi'] = vr_d['kwhttli']
+        tmp_d['kwhe'] = vr_d['kwhttle']
+        # tmp_d['kvarhi'] = vr_d['kvarhttli']
+        # tmp_d['kvarhe'] = vr_d['kvarhttle']
+    if  pli_d['use_power'] == '0':
+        tmp_d['p'] = vr_d['kwhttli'] # pttl have two value as list, p+ and p-
+        # tmp_d['q'] = vr_d['kvarhttli']
+    else:
+        # TODO: confirm p add up method.
+        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or  vr_d['pttl'][1] is None) else None
+        # Notice: 60 * 60 / interval
+        # tmp_d['q'] = (vr_d['qttl'][0] + vr_d['qttl'][1]) * 4
+    if not tmp_d['kwhi'] is None:
+        tmp_d['charge'] = rate * tmp_d['kwhi']
+    else:
+        tmp_d['charge'] = None
+    tmp_d['_times'] = vr_d['_times']
+    return tmp_d
 
 
-def sql_op(ha, a, hb, b, cmpid='2017', app='eemscr', comp='company'):
-    # TODO: insert one sql into sql.
-    # invalide.
-    dif_a = ha - a
-    dif_b = hb - b
-    def mksql_15min_insert(stat_time, cmpid, kwh, spfv, charge, table=''):
-        import time
-        example_sql = "insert into elec_company_15min_2017 (stat_time, cmpid, kwh, charge) values ('2017-01-06 12:00:00' , '7', '100', '80');"
-        table = table or 'elec_%s_15min_%s' % (comp, time.strftime('%Y', time.localtime()))
-        sql = "insert into %s (stat_time, cmpid, kwh, spfv, charge)  values ('%s', '%s', '%s', '%s', '%s');" % (table, stat_time, cmpid, kwh, spfv, charge)
-        return sql
-
-    def get_sql_worker(app):
-        if not 'mysql:' in str(app):
-            app = 'mysql:' + app
-        return mysql_workers_d[app]
-    def query_charge(cmpid, stat_time):
-        return None
-    t1 = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
-    return mksql_15min_insert(t1, cmpid, dif_a, 'f', '3')
+def key_get_out(ks, n=3):
+    ss = ks.split('/')[:n] + ks.split('/')[n+1:]
+    s_out = ks.split('/')[n]
+    new_s = ''
+    for i in ss:
+        new_s += i + '/'
+    return new_s[:-1], s_out
 
 
-def f1(n, ct= 0, pr=False, *lst):
-    # print(d1)
-    ct += 1
-    if pr:
-        print(ct)
-    if ct > n:
-        return n
-    # d1['count'] += 1
-    import time
-    time.sleep(0.08)
-    return f1(n - 1, ct)
+def one_comp(cid, n=8, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, sql_meta_info=sql_meta_info_default):
+    # TODO: pttl unit is hour.
+    def mk_his_key(mid, t, ckp_ts, no_mid=False):
+        # return '%s_%s_%s_%s_%s_%s' % (app, comp, cid, mid, t, ckp_ts)
+        if no_mid:
+            return '%s/%s/%s/%s' % (app, comp, cid, ckp_ts)
+        return '%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts)
 
-def f0(lst):
-    return f1(*lst)
+    one_comp_mids = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'].keys()
+    # TODO: use global dict, cache at first 15 mins
+    print('mids is %s' % one_comp_mids)
+    flag_key = mk_his_key(0, 0, 0)
+    if not flag_key in his_d:
+        his_d[flag_key] = 'inited'
+        init_history = True
+    else:
+        init_history = False
+
+    def thread_one(mids, t): # use local varable
+        if  not str(str(t) +'_'+ str(mid)) in his_d:
+            ic0, hi0 = calc_meter_acc(mid, t + interval, vrs_s=vrs_s)
+            # print(hi0)
+            his_d[str(t) +'_'+ str(mid)] = hi0
+        ic, hi = calc_meter_acc(mid, t, history=his_d[str(t) + '_' + str(mid)], vrs_s=vrs_s)
+        # print(ic, hi)
+        his_d[str(t) +'_'+ str(mid)] = hi
+        return ic
+    def t_acc(lst):
+        return thread_one(*lst)
+    def mk_redis_tasks(mids=one_comp_mids, ckps=ckps, cid=cid, interval=interval):
+        tasks = []
+        if init_history:
+            print('init mk_redis_tasks')
+            for t in ckps:
+                for mid in mids:
+                    one_task = [[cid, mid, t+interval, True], [cid, mid, t, False]]
+                    tasks += one_task
+        else:
+            tasks = [[cid, mid, t, False] for mid in mids for t in ckps]
+        return tasks
+
+    def rd_acc(lst):
+        return rd(*lst)
+
+    def rd(cid, mid, t, left_null):
+        rlt_4 = get_near_keys(mid, t, interval=interval, rsrv=rsrv, left_null=left_null)
+        # info_str = 'app%s_comp%s_%s_%s_%s_%s' % (app,comp, cid, mid, t, rlt_4[2][1])
+        meta_info = [mk_his_key(mid, t, rlt_4[2][0]), mk_his_key(mid, t, rlt_4[2][1])]
+        # rlt_4[2] is ts_ckp, will always have values, like ['20170111_120000', '20170111_121500']
+        # print('mid', mid)
+        return [meta_info, rlt_4]
+
+    def vrs_parse(sect): # use vrs_s outer_side info
+        [[key_0, key_1], [v_left, v_near, ts_ckp, v_right]] = sect
+        # TODO: try
+        # print(key_0, key_1)
+        if not key_0 in his_d:
+            ckp_values = kwh_interval(v_near, history=[], vrs_s=vrs_s)
+            his_d[key_1] = ckp_values
+            return []
+        else:
+            ckp_values = kwh_interval(v_near, history=his_d[key_0], vrs_s=vrs_s)
+            his_d[key_1] = ckp_values
+            # print(ckp_values)
+            incr = incr_sumup(his_d[key_0], v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
+            return [key_1, incr]
+
+    fee_d_default = {}
+    # fees_k is like {'mysql:app_eemscr/company/3/20170111_214500':{}}
+    def fee_reduce_mid(vrs_extr_one, fee_d=fee_d_default, sql_meta_info=sql_meta_info):
+        def add_up_dic(d1, d2):
+            for k1, v1 in d1.items():
+                v2 = d2[k1] if k1 in d2 else None
+                if type(v1) == str:
+                    v_add = v1
+                else:
+                    v_add = v1 + v2 if (v1 and v2) else (v1 or v2)
+                d1[k1] = v_add
+            return d1
+
+        # TODO: should merge fee_d and pli_d into one dict.
+        ks, vr_d = vrs_extr_one
+        # # vrs_extr_one is like[meter_info_str, dict]
+        # # ks is like 'mysql:app_eemscr/company/3/20170101_121500'
+        cid_fee_key, meter_id = key_get_out(ks)
+        cid = key_get_out(ks, 2)[1]
+        price_info_d = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['price']
+        pli_info_d   = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'][meter_id]
+        # print(vr_d, price_info_d, pli_info_d)
+        # time.sleep(1000)
+        # print(vr_d)
+        fee_meter_new = apply_pli(vr_d, price_info_d, pli_info_d)
+        if not cid_fee_key in fee_d:
+            fee_d[cid_fee_key] = fee_meter_new
+        else:
+            fee_meter_exist_one = fee_d[cid_fee_key]
+            fee_d[cid_fee_key] = add_up_dic(fee_meter_exist_one, fee_meter_new)
+        return fee_meter_new
+
+    t_s = time.time()
+    # print(len(mk_redis_tasks(mids, ckps)))
+    tp = gpol(n)
+    # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
+    redis_rcds = tp.map(rd_acc, mk_redis_tasks())
+    # t_b = time.time()
+    # TODO: pipe the data process, which will save RAM.
+    vrs_extr = [i for i in map(vrs_parse, redis_rcds) if i]
+    fee_lst = map(fee_reduce_mid, vrs_extr)
+    # print('cpu time %s' % (time.time() - t_b))
+    print('spend time %s' % (time.time() - t_s))
+    # return vrs_extr
+    # return [redis_rcds, vrs_extr, fee_lst, fee_d_default]
+    print( len(redis_rcds), len(vrs_extr), len(fee_lst))
+    # return [fee_lst, fee_d_default]
+    return fee_d_default
 
 
-def fln(fn):
-    def f_acc(lst):
-        return fn(*lst)
-    return f_acc
+def snip_shot(meta_d=sql_meta_info_default):
+    app_comps = meta_d.keys()
+    def produce_task(meta_d=meta_d):
+        for app_comp in app_comps:
+            app, comp = app_comp.split('/')
+            print(app)
+            cids = meta_d[app_comp].keys()
+            for cid in cids:
+                print(cid)
+                # yield [int(cid), app]
+                yield (int(cid), app)
+    rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
+    return rst_snp
 
-
-def test_thread():
-    f_02 = fln(f1)
-    pp4 = ppol(4)
-    tp4 = tpol(4)
-    trst4 = tp4.map(f_02, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
-    # prst4 = pp4.map(f_02, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
-    # can not use dynamic
-    print(trn4)
-    nn4 = pp4.map(f1, [5,3,8,7])
-    print(nn4)
-    # gp8 = gpol(8)
-    # gp4 = gpol(4)
-    # gp2 = gpol(2)
-    # ta = time.time()
-    # gr4 = gp4.map(fln(f1), [[21,3], [21,2], [22, 4], [22, 1], [24,1], [25, 2]])
-    # print(time.time() - ta)
-
-    # trl4 = tp4.map(fln, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
-    # tr4 = tp4.map(f0, [[15,13], [1,2], [22, 4], [22, 1], [4,1], [15, 2]])
-
-    # qrey_charge(company_id, '2017-01-01 14:30:00', {'company_id':n, 'kwhttli':a, 'pttli':q})
+# t_start = time.time()
+# rst_snipshot2 = snip_shot()
+# print('total spend time %s' % (time.time() - t_start))
+# rst_snipshot2_valid = [i for i in rst_snipshot2 if i]
 
 
 def test_redis(fn=get_near_keys, lst = [2, 0 ], args={}):
-    import time
     t_start = time.time()
     # near_keys = get_near_keys(2, 0)
     near_keys = fn(*lst, **args)
     print(time.time() - t_start)
     return near_keys
+
+
+
+# testing data:
+# elec_ table is like
+# (('stat_time', 'datetime', 'NO', 'PRI', None, ''),
+#  ('company_id', 'smallint(5) unsigned', 'NO', 'PRI', None, ''),
+#  ('kwh', 'double', 'NO', '', None, ''),
+#  ('spfv', 'char(1)', 'NO', '', None, ''),
+#  ('charge', 'double', 'NO', '', None, ''),
+#  ('p', 'double', 'YES', '', None, ''),
+#  ('kwhi', 'double', 'YES', '', None, ''),
+#  ('kwhe', 'double', 'YES', '', None, ''),
+#  ('q', 'double', 'YES', '', None, ''),
+#  ('kvarhi', 'double', 'YES', '', None, ''),
+#  ('kvarhe', 'double', 'YES', '', None, ''))
+
+vr_ext_one = ['mysql:app_eemscr/company/3/2166/20170111_194500',
+              {'kwhttle': None,
+               'kwhttli': None,
+               'pttl': [194.30324470, 0.0],
+               '_times': '20170111_193000'}]
+
+comp_info_d_one = {'meter_ids': [34758, 2159, 2166, 2024, 2016, 2019, 2125, 2000, 2075, 2106],
+                   'price': {'f': 0.5846,
+                             'hours': 'vvvvvvvvfpppfffffffpppff',
+                             'p': 0.9329,
+                             'v': 0.3167}}
+
+pli_one = {'ctnum': '2',
+             'ctr': '10.0',
+             'dev_mac': '120000af6b3a',
+             'dev_model': 'pb600',
+             'gmid': '35545',
+             'kva': '800.0',
+             'meter_sn': '',
+             'ptr': '100.0',
+             'r_ia': '10.0',
+             'r_kwhttli': '1000.0',
+             'r_pa': '1000.0',
+             'r_ua': '100.0',
+             'tc': '800.0',
+             'use_energy': '0',
+             'use_power': '0'}
+
+fee_d_one = {'charge': 113.58967685162,
+             'kwhe': 0.0,
+             'kwhi': 194.3032447,
+             'p': 777.2129788,
+             'spfv': 'f',
+             '_times': '20170111_193000'}
 
 
 def main():
