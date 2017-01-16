@@ -651,6 +651,8 @@ def snip_shot(meta_d=sql_meta_info_default):
     rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
     return rst_snp
 
+# TODO: make it a class
+
 # t_start = time.time()
 # rst_snipshot2 = snip_shot()
 # print('total spend time %s' % (time.time() - t_start))
