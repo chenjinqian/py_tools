@@ -69,7 +69,11 @@ class MySQLdb_pool(object):
             else:
                 conn = self._pool.get()
                 self.cnx_now -= 1
-            conn.ping()
+                try:
+                    conn.ping()
+                except:
+                    print('can not ping throgh the server.')
+                    conn = None
             if not (conn and conn.open):
                 print('pop a broken conn, replace it to valid conn at the out gateway...')
                 return self.CreateConnection()

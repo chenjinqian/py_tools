@@ -72,8 +72,8 @@ app_lst_default = ['mysql:app_eemsii',
 
 # TODO: 15 min init and end of loop, inti values
 # # not global, should be defined in main
-# sql_meta_info_default = sql_get_all_info(app_lst_default)
-# his_d_default = {}
+sql_meta_info_default = sql_get_all_info(app_lst_default)
+his_d_default = {}
 # fee_pli_d = get_all_fee_policy()
 
 
@@ -448,6 +448,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
         import os, sys
         try:
             cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
+            print(cid_list)
             # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
             # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
             # TODO: get workshop and equipment fees
@@ -456,7 +457,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
             for cid in cid_list:
                 rst_d['%s/%s' % (app, comp)]['%s' % cid] = {}
         except:
-            print(str(sys.exc_info()), rst_d.keys())
+            print('#1',str(sys.exc_info()), rst_d.keys())
     for ap_comp in rst_d.keys():
         for cid in rst_d[ap_comp].keys():
             rst_d[ap_comp][cid] = {}
@@ -648,9 +649,22 @@ def snip_shot(meta_d=sql_meta_info_default):
                 print(cid)
                 # yield [int(cid), app]
                 yield (int(cid), app)
+    # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
     rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
     return rst_snp
 
+
+def sql_op(info_dic):
+    """info_dic is like:
+    {meta:eemsyd/company/3/,
+    _time:'20170113_1215',
+    kwhi:n,
+    kwhe:m,
+    pttl:x,
+    kvarhi:y,
+    kvarhe:z,
+    qttl:a,}"""
+    pass
 # TODO: make it a class
 
 # t_start = time.time()
