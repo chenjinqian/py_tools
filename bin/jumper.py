@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python
 
-import read_config
-import redis_pool
-import mysql_pool
+import read_config as rcfg
+# import redis_pool as rpol
+import redis
+import mysql_pool as mpol
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -33,7 +34,7 @@ def mk_mp_d(ini='../config/db.ini', mark='mysql:'):
     for db in db_lst:
         pol_d[db] = mpol.MySQLWrapper(**cfgd[db])
         pol_worker[db] = mpol.MySQLWrapper(**cfgd[db]).do_work
-    return [pol_d, pol_worker]
+    return pol_worker
 
 
 def mk_rp_d(ini='../config/db.ini', mark='redis:'):
@@ -41,14 +42,17 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
     db_lst = [i for i in cfgd.keys() if mark in i]
     pol_d = {}
     for db in db_lst:
-        pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor()
+        # pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor
+        p = redis.ConnectionPool(**cfgd[db])
+        r = redis.Redis(connection_pool=p)
+        pol_d[db] = r
     return pol_d
 
 
 # use dictory for global database connection pool instance.
-cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
-my_pol_d, my_pol_w = mk_mp_d()
-rd_pol_c = mk_rp_d()
+cfgd = cfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+mysql_worker_d = mk_mp_d()
+redis_cursor_d = mk_rp_d()
 
 
 # sydw('select stat_time, company_id, kwh from elec_company_15min_2016 order by stat_time DESC, company_id limit 50;')
@@ -95,19 +99,21 @@ def mksql_today_sum(comp='2', table='', time_start='', time_end=''):
     return sql
 
 
-def get_15m_last_n(comp, point=3, table='', worker=syd_pool):
+def get_15m_last_n(comp, point=3, table='', app='mysql:app_eemsop'):
+    worker = mysql_worker_d[app]
     # sql_example = 'select * from elec_company_15min_2016 where company_id = 12 order by stat_time desc limit 5;'
     # sql = 'select * from %s where company_id=%s order by %s desc limit %s;' % (table_name, company_id, order_by, n)
     sql = mksql_last_15_min(comp, point, table)
-    res = worker.do_work(sql)
+    res = worker(sql)
     return res
 
 
-def get_sum_today(comp, table='', worker=syd_pool, time_start='', time_end=''):
+def get_sum_today(comp, table='', app='mysql:app_eemsop', time_start='', time_end=''):
+    worker = mysql_worker_d[app]
     # sql_example = 'select * from elec_company_15min_2016 where company_id = 12 order by stat_time desc limit 5;'
     # sql = 'select * from %s where company_id=%s order by %s desc limit %s;' % (table_name, company_id, order_by, n)
     sql = mksql_today_sum(comp, table, time_start=time_start, time_end=time_end)
-    res = worker.do_work(sql)
+    res = worker(sql)
     return res
 
 
@@ -153,20 +159,27 @@ def plot_company_line(res, fold=3, line_option='', fee = False, ori = False, sho
     return len(res)
 
 
-def r_set_lst_keys(kv_lst, time_out=1200, r_pool=r_webpage_pool):
-    r = r_pool.get_cursor()
+def r_set_lst_keys(kv_lst, time_out=1200, app='redis:webpage'):
+    r = redis_cursor_d[app]
+    p = r.pipeline(transaction=False)
+    # sort by time stamp, near ones first.
+    import itertools
     if type(kv_lst) == dict:
-        kv_lst_sorted = sorted(kv_lst.items())
+        kv_lst = [[k, v] for k, v in kv_lst.iteritems()]
     else:
-        kv_lst_sorted = sorted(kv_lst)
-        # sort by time stamp, near ones first.
-    for pair in kv_lst_sorted:
+        kv_lst = sorted(kv_lst)
+    for pair in kv_lst:
         try:
             k, v = pair
-            r.setkey(k, v, ex=int(time_out))
+            p.setex(str(k), v, int(time_out))
         except:
+            # print('error in writing.')
+            import sys
+            print(str(sys.exc_info()))
+            # print(k , v)
             continue
-    return kv_lst_sorted[-1]
+    p.execute()
+    return kv_lst[-1]
 
 
 def tree_to_one(a, b, c, ex = 0.618, positive=True):
@@ -232,17 +245,18 @@ def resi_vs_ex(comp=2, n = 96):
 
 
 # example
-r_k_example = 'web_eemsyd_company_12_kwh/2016-12-23_171500:'
+r_k_example = 'web_eemsop_company_12_kwh/2016-12-23_171500:'
 
-def pred_forward(last_rcds,kwh_sum,sec=1200,pred_d={},app_type='eemsyd',comp_id='company_2',fake_now='', **para_d):
+def pred_forward(last_rcds,kwh_sum,pred_d={},sec=1200,app_type='eemsop',cid=2,fake_now='', **para_d):
     """use power prediction. last_rcds should have time-value pair.
     last_rcds is 3 records, kwh_sum is the sum.
     """
     import time
+    comp_id='company_%s' % (cid)
     def int_fo_s(s):
         return time.mktime(time.strptime(s, '%Y-%m-%d %H:%M:%S'))
     def s_fo_int(i):
-        return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(i))
+        return time.strftime('%Y-%m-%d_%H%M%S', time.localtime(i))
     def pk(s):
         return 'web_%s_%s_kwh/%s' % (app_type, comp_id, s)
     if len(last_rcds) == 3 and (int_fo_s(str(last_rcds[2][0])) - int_fo_s(str(last_rcds[0][0]))) == 1800:
@@ -282,15 +296,22 @@ def pred_forward(last_rcds,kwh_sum,sec=1200,pred_d={},app_type='eemsyd',comp_id=
     return pred_d
 
 
-def pred_():
-    import sys
-    args = sys.argv
-    n = 0
-    for arg in args:
-        import re
-        if re.match('^--?(\w*)', arg):
-            va = ''
-        print(arg)
+def pred_one( cid=2, app='mysql:app_eemsyd', app_type='company'):
+    pred_d = pred_forward(get_15m_last_n(cid, app=app),  get_sum_today(cid, app=app))
+    r_set_lst_keys(pred_d)
+    print(pred_d)
+    import time
+    time.sleep(6)
+    # return pred_one(app=app, app_type=app_type, cid=cid)
+    # import sys
+    # args = sys.argv
+    # n = 0
+    # for arg in args:
+    #     import re
+    #     if re.match('^--?(\w*)', arg):
+    #         va = ''
+    #     print(arg)
+    pass
 
 
 if __name__ == '__main__':
