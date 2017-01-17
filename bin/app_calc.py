@@ -47,6 +47,13 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
     return pol_d
 
 
+### global variables ###
+# use dictory for global database connection pool instance.
+cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+mysql_workers_d = mk_mp_d()
+redis_cursors_d = mk_rp_d()
+
+
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='company'):
     worker = mysql_workers_d[app]
     if option == 'price':
@@ -102,81 +109,6 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='com
     else:
         mids = []
     return [str(i) for i in mids if i]
-
-
-def sql_get_all_info(app_lst=app_lst_default, comp='company'):
-    # all comp types.
-    mids_pli_d = get_all_fee_policy()
-    company_id_d = {} # {'mysql:app_eemscr':[],}
-    rst_d = {}
-    for app in app_lst:
-        import os, sys
-        try:
-            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
-            print(cid_list)
-            # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
-            # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
-            # TODO: get workshop and equipment fees
-            rst_d['%s/%s' % (app, comp)] = {}
-            # print('%s/%s' % (app, comp))
-            for cid in cid_list:
-                rst_d['%s/%s' % (app, comp)]['%s' % cid] = {}
-        except:
-            print('#1',str(sys.exc_info()), rst_d.keys())
-    for ap_comp in rst_d.keys():
-        for cid in rst_d[ap_comp].keys():
-            rst_d[ap_comp][cid] = {}
-            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
-            rst_d[ap_comp][cid]['meter_id'] = {}
-            for mid in meter_id_lst:
-                if str(mid) in mids_pli_d:
-                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = mids_pli_d[str(mid)]
-                else:
-                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = {}
-    for ap_comp in rst_d.keys():
-        for cid in rst_d[ap_comp].keys():
-            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
-    return rst_d
-
-
-### global variables ###
-# use dictory for global database connection pool instance.
-
-cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
-mysql_workers_d = mk_mp_d()
-redis_cursors_d = mk_rp_d()
-
-vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
-# TODO: kvarhi, kvarhe and q
-ckps_default = [0, 60*30, 60*60*3]
-rsrv_default = 'redis:meter'
-app_lst_default = ['mysql:app_eemsii',
-                   # 'mysql:app_eemsdemo',
-                   # 'mysql:meterinfo',
-                   # 'mysql:app_eemsakuu',
-                   'mysql:app_eemsop',
-                   'mysql:app_eemssec',
-                   'mysql:app_eemscr',
-                   # 'mysql:app_eemsman',
-                   'mysql:app_eemsyd',]
-
-# TODO: 15 min init and end of loop, inti values
-# # not global, should be defined in main
-sql_meta_info_default = sql_get_all_info(app_lst_default)
-his_d_default = {}
-
-
-def sql_op(info_dic):
-    """info_dic is like:
-    {meta:eemsyd/company/3/,
-    _time:'20170113_1215',
-    kwhi:n,
-    kwhe:m,
-    pttl:x,
-    kvarhi:y,
-    kvarhe:z,
-    qttl:a,}"""
-    pass
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
@@ -435,17 +367,6 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     return rst
 
 
-def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
-    mids = get_mids_all(rsrv=rsrv, lk1=lk1,raw=raw)
-    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw, old=old)
-
-
-def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
-    r = redis_cursors_d[rsrv]
-    mids = r.hkeys('sync_meterinfo')
-    return mids
-
-
 def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
     def parse_pli(sss):
         d = {}
@@ -471,6 +392,52 @@ def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=Fal
     for mid, pli in itertools.izip(mids, fee_plis):
         pli_d[mid] = pli if raw else parse_pli(pli)
     return pli_d
+
+
+def get_mids_all(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False):
+    r = redis_cursors_d[rsrv]
+    mids = r.hkeys('sync_meterinfo')
+    return mids
+
+
+def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
+    mids = get_mids_all(rsrv=rsrv, lk1=lk1,raw=raw)
+    return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw, old=old)
+
+
+def sql_get_all_info(app_lst=['mysql:app_eemsop'], comp='company'):
+    # all comp types.
+    mids_pli_d = get_all_fee_policy()
+    company_id_d = {} # {'mysql:app_eemscr':[],}
+    rst_d = {}
+    for app in app_lst:
+        import os, sys
+        try:
+            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
+            print(cid_list)
+            # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
+            # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
+            # TODO: get workshop and equipment fees
+            rst_d['%s/%s' % (app, comp)] = {}
+            # print('%s/%s' % (app, comp))
+            for cid in cid_list:
+                rst_d['%s/%s' % (app, comp)]['%s' % cid] = {}
+        except:
+            print('#1',str(sys.exc_info()), rst_d.keys())
+    for ap_comp in rst_d.keys():
+        for cid in rst_d[ap_comp].keys():
+            rst_d[ap_comp][cid] = {}
+            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
+            rst_d[ap_comp][cid]['meter_id'] = {}
+            for mid in meter_id_lst:
+                if str(mid) in mids_pli_d:
+                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = mids_pli_d[str(mid)]
+                else:
+                    rst_d[ap_comp][cid]['meter_id'][str(mid)] = {}
+    for ap_comp in rst_d.keys():
+        for cid in rst_d[ap_comp].keys():
+            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
+    return rst_d
 
 
 def how_about_sleep(shift=180, interval=900, real_sleep=True):
@@ -513,7 +480,7 @@ def apply_pli(vr_d, price_d, pli_d, interval=900):
         # TODO: confirm p add up method.
         tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
         # Notice: 60 * 60 / interval
-        tmp_d['q'] = (vr_d['qttl'][0] + vr_d['qttl'][1]) * 4
+        tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * 4) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
     if not tmp_d['kwhi'] is None:
         tmp_d['charge'] = rate * tmp_d['kwhi']
     else:
@@ -531,8 +498,10 @@ def key_get_out(ks, n=3):
     return new_s[:-1], s_out
 
 
-def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, sql_meta_info=sql_meta_info_default):
+def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, sql_meta_info={}):
     # TODO: pttl unit is hour.
+    if not sql_meta_info:
+        return {}
     def mk_his_key(mid, t, ckp_ts, no_mid=False):
         # return '%s_%s_%s_%s_%s_%s' % (app, comp, cid, mid, t, ckp_ts)
         if no_mid:
@@ -660,41 +629,15 @@ def snip_shot(meta_d=sql_meta_info_default):
                 # yield [int(cid), app]
                 yield (int(cid), app)
     # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
-    p30 = gpol(30)
-    rst_snp = p30.map(lambda lst: one_comp(lst[0], app=lst[1]), (i for i in produce_task()))
+    p90 = gpol(90)
+    rst_snp = p90.map(lambda lst: one_comp(lst[0], app=lst[1]), (i for i in produce_task()))
     return rst_snp
 
 
-### global variables ###
-# use dictory for global database connection pool instance.
-
-cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
-mysql_workers_d = mk_mp_d()
-redis_cursors_d = mk_rp_d()
-vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
-# TODO: kvarhi, kvarhe and q
-ckps_default = [0, 60*30, 60*60*3]
-rsrv_default = 'redis:meter'
-app_lst_default = ['mysql:app_eemsii',
-                   # 'mysql:app_eemsdemo',
-                   # 'mysql:meterinfo',
-                   # 'mysql:app_eemsakuu',
-                   'mysql:app_eemsop',
-                   'mysql:app_eemssec',
-                   'mysql:app_eemscr',
-                   # 'mysql:app_eemsman',
-                   'mysql:app_eemsyd',]
-# TODO: 15 min init and end of loop, inti values
-# # not global, should be defined in main
-sql_meta_info_default = sql_get_all_info(app_lst_default)
-his_d_default = {}
-
-
 # TODO: make it a class
-
-# t_start = time.time()
-# rst_snipshot2 = snip_shot()
-# print('total spend time %s' % (time.time() - t_start))
+t_start = time.time()
+rst_snipshot2 = snip_shot()
+print('total spend time %s' % (time.time() - t_start))
 # rst_snipshot2_valid = [i for i in rst_snipshot2 if i]
 
 
@@ -704,7 +647,6 @@ def test_redis(fn=get_near_keys, lst = [2, 0 ], args={}):
     near_keys = fn(*lst, **args)
     print(time.time() - t_start)
     return near_keys
-
 
 
 # testing data:

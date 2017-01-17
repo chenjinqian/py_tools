@@ -9,6 +9,7 @@ import mysql_pool as mpol
 from matplotlib import pyplot as plt
 import numpy as np
 import scipy as sp
+import time
 
 import time, os, sys
 
@@ -76,14 +77,15 @@ def fm_tm(style=0, fm = '', tm=''):
     return time.strftime(fm, tm)
 
 
-def mksql_last_15_min(comp='2', point=3, table='', time_end='', simple_lst=True):
-    import time
+def mksql_last_15_min(comp='2', point=3, table='', time_end='', simple_lst=True, new=True):
     table = '' or 'elec_company_15min_%s' % time.strftime('%Y', time.localtime())
     example_sql = 'select * from (select * from elec_company_15min_2016 where company_id = 2  and stat_time < "2016-12-23 17:45:00" order by stat_time desc, stat_time limit 9600) t order by stat_time;'
     time_end = time_end or fm_tm()
     sql = 'select * from (select * from %s where company_id = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, comp, time_end, point)
     if simple_lst:
         sql = 'select stat_time, kwh from (select * from %s where company_id = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, comp, time_end, point)
+        if new:
+            sql = 'select stat_time, kwhi from (select * from %s where company_id = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, comp, time_end, point)
     return sql
 
 
@@ -99,11 +101,11 @@ def mksql_today_sum(comp='2', table='', time_start='', time_end=''):
     return sql
 
 
-def get_15m_last_n(comp, point=3, table='', app='mysql:app_eemsop'):
+def get_15m_last_n(comp, point=3, table='', app='mysql:app_eemsop', new=True):
     worker = mysql_worker_d[app]
     # sql_example = 'select * from elec_company_15min_2016 where company_id = 12 order by stat_time desc limit 5;'
     # sql = 'select * from %s where company_id=%s order by %s desc limit %s;' % (table_name, company_id, order_by, n)
-    sql = mksql_last_15_min(comp, point, table)
+    sql = mksql_last_15_min(comp, point, table, new=new)
     res = worker(sql)
     return res
 
@@ -179,7 +181,11 @@ def r_set_lst_keys(kv_lst, time_out=1200, app='redis:webpage'):
             # print(k , v)
             continue
     p.execute()
-    return kv_lst[-1]
+    if kv_lst:
+        return 1
+    else:
+        return 0
+
 
 
 def tree_to_one(a, b, c, ex = 0.618, positive=True):
@@ -245,9 +251,9 @@ def resi_vs_ex(comp=2, n = 96):
 
 
 # example
-r_k_example = 'web_eemsop_company_12_kwh/2016-12-23_171500:'
+r_k_example = 'web_eemsop_company_12_kwh:2016-12-23_171500'
 
-def pred_forward(last_rcds,kwh_sum,pred_d={},sec=1200,app_type='eemsop',cid=2,fake_now='', **para_d):
+def pred_forward(last_rcds,kwh_sum,pred_d={},sec=1200,app_simple='eemsop',cid=2,fake_now='', **para_d):
     """use power prediction. last_rcds should have time-value pair.
     last_rcds is 3 records, kwh_sum is the sum.
     """
@@ -258,8 +264,10 @@ def pred_forward(last_rcds,kwh_sum,pred_d={},sec=1200,app_type='eemsop',cid=2,fa
     def s_fo_int(i):
         return time.strftime('%Y-%m-%d_%H%M%S', time.localtime(i))
     def pk(s):
-        return 'web_%s_%s_kwh/%s' % (app_type, comp_id, s)
+        return 'web_%s_%s_kwh:%s' % (app_simple, comp_id, s)
+    if not last_rcds: return {}
     if len(last_rcds) == 3 and (int_fo_s(str(last_rcds[2][0])) - int_fo_s(str(last_rcds[0][0]))) == 1800:
+        print(last_rcds)
         next_kwh = tree_to_one(*[i[1] for i in last_rcds][-3:], **para_d)
         p_next = next_kwh / float(900)
     else:
@@ -296,12 +304,13 @@ def pred_forward(last_rcds,kwh_sum,pred_d={},sec=1200,app_type='eemsop',cid=2,fa
     return pred_d
 
 
-def pred_one( cid=2, app='mysql:app_eemsyd', app_type='company'):
-    pred_d = pred_forward(get_15m_last_n(cid, app=app),  get_sum_today(cid, app=app))
+def pred_one(cid=2, app='mysql:app_eemsop', app_type='company', app_simple='eemsop', new=True, cid_map=0):
+    if not cid_map: cid_map = cid
+    pred_d = pred_forward(get_15m_last_n(cid, app=app, new=new),  get_sum_today(cid, app=app), app_simple=app_simple, cid=cid_map)
     r_set_lst_keys(pred_d)
     print(pred_d)
     import time
-    time.sleep(6)
+    time.sleep(0.6)
     # return pred_one(app=app, app_type=app_type, cid=cid)
     # import sys
     # args = sys.argv
@@ -311,7 +320,14 @@ def pred_one( cid=2, app='mysql:app_eemsyd', app_type='company'):
     #     if re.match('^--?(\w*)', arg):
     #         va = ''
     #     print(arg)
-    pass
+    return cid
+
+
+def fake_26():
+    while True:
+        pred_one(cid=26, app='mysql:app_eemscr', app_simple='eemsop', new=False, cid_map=2026)
+        print('sleeping for 600')
+        time.sleep(600)
 
 
 if __name__ == '__main__':
