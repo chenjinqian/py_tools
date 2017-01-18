@@ -644,7 +644,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=c
     return fee_d_default
 
 
-def sql_op(info_dict):
+def sql_op(info_dict, workers_d=mysql_workers_d):
     """
     info_and_dict is like:
     {'mysql:app_eemsop/company/38/20170118_064500': {'_times': '20170118_063000',
@@ -664,7 +664,7 @@ def sql_op(info_dict):
     sqls = []
     if not info_dict:
         return sqls
-    for info_key, sd in info_dict.iteritems:
+    for info_key, sd in info_dict.iteritems():
         if not sd:
             continue
         app_complex, comp, cid, t_s = info_key.split('/')
@@ -678,7 +678,10 @@ def sql_op(info_dict):
         sqls.append(sql)
         try:
             worker(sql)
-        except:
+        except KeyboardInterrupt as e:
+            break
+        except Exception as e:
+            print(e)
             print('except on writing dict: %s' % info_dict)
             continue
     return sqls
