@@ -470,8 +470,8 @@ def apply_pli(vr_d, price_d, pli_d, interval=900):
         # default value changed to 1.
         # pttl have two value as list, p+ and p-
         tmp_d['_use_energy'] = '0'
-        tmp_d['kwhi'] = None if vr_d['pttl'][0] is None else (vr_d['pttl'][0] / trans_factor)
-        tmp_d['kwhe'] = None if vr_d['pttl'][1] is None else (vr_d['pttl'][1] / trans_factor)
+        tmp_d['kwhi'] = None if vr_d['pttl'][0] is None else (vr_d['pttl'][0])
+        tmp_d['kwhe'] = None if vr_d['pttl'][1] is None else (vr_d['pttl'][1])
         tmp_d['kvarhi'] = vr_d['qttl'][0]
         tmp_d['kvarhe'] = vr_d['qttl'][1]
     else:
@@ -486,10 +486,10 @@ def apply_pli(vr_d, price_d, pli_d, interval=900):
         tmp_d['q'] = vr_d['kvarhttli'] * trans_factor
     else:
         tmp_d['_use_power'] = pli_d['use_power']
-        # TODO: confirm p add up method.
         tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
-        # Notice: 60 * 60 / interval
         tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * 4) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
+        # TODO: confirm p add up method.
+        # Notice: 60 * 60 / interval
     if not tmp_d['kwhi'] is None:
         tmp_d['charge'] = rate * tmp_d['kwhi']
     else:
