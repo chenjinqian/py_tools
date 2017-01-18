@@ -12,6 +12,9 @@
 # TODO: kwhi should check and figure out kwh reset condition.
 # TODO: meta dict could have merter_ids info, which will be more clear.
 # TODO: using log for exception records.
+# TODO: raise up the mysql_pool exception. now it will print
+#       some exception info.
+#       two connections, one have commit sth, another will not notice. weird.
 
 """
 doc
@@ -75,7 +78,7 @@ vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], 
 ckps_default = [0, 60*30, 60*60*3]
 
 
-def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='company', workers_d=mysql_workers_d):
+def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='company', workers_d=mysql_workers_d):
     worker = workers_d[app]
     if option == 'price':
         sql = 'select hours, price_p, price_f, price_v  from price_policy  where %s_id=%s' % (comp, cid)
@@ -512,7 +515,8 @@ def apply_pli(vr_d, price_d, pli_d, interval=900):
         tmp_d['charge'] = rate * tmp_d['kwhi']
     else:
         tmp_d['charge'] = None
-    tmp_d['_times'] = vr_d['_times']
+    # tmp_d['_times'] = vr_d['_times']
+    tmp_d['_times'] = time.strftime('%Y-%m-%d %H:%M:%S', time.strptime(vr_d['_times'], '%Y%m%d_%H%M%S'))
     return tmp_d
 
 
@@ -525,7 +529,7 @@ def key_get_out(ks, n=3):
     return new_s[:-1], s_out
 
 
-def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d={}, sql_meta_info={}):
+def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d={}, sql_meta_info={}):
     # TODO: pttl unit is hour.
     if not sql_meta_info:
         return {}
@@ -670,14 +674,14 @@ def sql_op(info_dict, workers_d=mysql_workers_d):
         app_complex, comp, cid, t_s = info_key.split('/')
         worker = workers_d[app_complex]
         # stat_time = sd['_times']
-        sql = "insert into elec_%s_15min_%s (stat_time, company_id, charge, kwhi, kwhe, kvarhi, kvarhe, p, q) values \
-        (%s, %s, %s, %s, %s, %s, %s, %s, %s) on duplicate key update \
-        charge=charge, kwhi=kwhi, kwhe=kwhe, kvarhi=kvarhi, kvarhe=kvarhe, p=p, q=q" % \
-        (comp, time.strftime('%Y', time.localtime()), sd['_times'], cid, sd['charge'], sd['kwhi'], sd['kwhe'], \
-         sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], )
+        sql = "insert into elec_%s_15min_%s (stat_time, company_id, charge, kwhi, kwhe, kvarhi, kvarhe, p, q, spfv) values \
+        ('%s', '%s', '%s', %s, '%s', '%s', '%s', '%s', '%s', '%s') on duplicate key update \
+        charge=charge, kwhi=kwhi, kwhe=kwhe, kvarhi=kvarhi, kvarhe=kvarhe, p=p, q=q, spfv=spfv" % \
+        (comp, time.strftime('%Y', time.localtime()), sd['_times'], int(cid), sd['charge'], sd['kwhi'], sd['kwhe'], \
+         sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'])
         sqls.append(sql)
         try:
-            worker(sql)
+            worker(sql, commit=True)
         except KeyboardInterrupt as e:
             break
         except Exception as e:
