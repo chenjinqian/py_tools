@@ -11,6 +11,7 @@
 # TODO: update sql_meta_default using additional amount query.
 # TODO: kwhi should check and figure out kwh reset condition.
 # TODO: meta dict could have merter_ids info, which will be more clear.
+# TODO: using log for exception records.
 
 """
 doc
@@ -661,7 +662,11 @@ def sql_op(info_dict):
     _time and other variables.
     """
     sqls = []
+    if not info_dict:
+        return sqls
     for info_key, sd in info_dict.iteritems:
+        if not sd:
+            continue
         app_complex, comp, cid, t_s = info_key.split('/')
         worker = workers_d[app_complex]
         # stat_time = sd['_times']
