@@ -30,10 +30,10 @@ def mk_mp_d(ini='../config/db.ini', mark='mysql:'):
     """read config files, and make mysql connection pool instance as dict."""
     cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
     db_lst = [i for i in cfgd.keys() if mark in i]
-    pol_d = {}
+    # pol_d = {}
     pol_worker = {}
     for db in db_lst:
-        pol_d[db] = mpol.MySQLWrapper(**cfgd[db])
+        # pol_d[db] = mpol.MySQLWrapper(**cfgd[db])
         pol_worker[db] = mpol.MySQLWrapper(**cfgd[db]).do_work
     return pol_worker
 
@@ -330,5 +330,6 @@ def fake_26():
         time.sleep(600)
 
 
+# TODO: workshop should be in same time.
 if __name__ == '__main__':
     main()

@@ -52,6 +52,10 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
 cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
 mysql_workers_d = mk_mp_d()
 redis_cursors_d = mk_rp_d()
+rsrv_default = 'redis:meter'
+app_lst_default = ['mysql:app_eemsop']
+vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
+ckps_default = [0, 60*30, 60*60*3]
 
 
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='company'):
@@ -204,7 +208,6 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
     r = redis_cursors_d[rsrv]
     p = r.pipeline(transaction=True)
-    # TODO: use piplining and transaction.
     # pip = r.pipline(transaction=False)
     def ts_ckp_int(i):
         # TODO: Here, weird int section problem.
@@ -405,7 +408,7 @@ def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old
     return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw, old=old)
 
 
-def sql_get_all_info(app_lst=['mysql:app_eemsop'], comp='company'):
+def sql_get_all_info(app_lst=app_lst_default, comp='company'):
     # all comp types.
     mids_pli_d = get_all_fee_policy()
     company_id_d = {} # {'mysql:app_eemscr':[],}
@@ -498,7 +501,7 @@ def key_get_out(ks, n=3):
     return new_s[:-1], s_out
 
 
-def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d=his_d_default, sql_meta_info={}):
+def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d={}, sql_meta_info={}):
     # TODO: pttl unit is hour.
     if not sql_meta_info:
         return {}
@@ -617,7 +620,11 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=c
     return fee_d_default
 
 
-def snip_shot(meta_d=sql_meta_info_default):
+sql_meta_info_default = sql_get_all_info(app_lst_default)
+# sql_meta_info_default = {}
+his_d_default = {}
+
+def snip_shot(meta_d=sql_meta_info_default, his_d=his_d_default):
     app_comps = meta_d.keys()
     def produce_task(meta_d=meta_d):
         for app_comp in app_comps:
@@ -630,14 +637,25 @@ def snip_shot(meta_d=sql_meta_info_default):
                 yield (int(cid), app)
     # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
     p90 = gpol(90)
-    rst_snp = p90.map(lambda lst: one_comp(lst[0], app=lst[1]), (i for i in produce_task()))
+    rst_snp = p90.map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=sql_meta_info), (i for i in produce_task()))
     return rst_snp
 
 
+# TODO: kvarhi, kvarhe and q
+    # 'mysql:app_eemsii',
+    # 'mysql:app_eemsdemo',
+    # 'mysql:meterinfo',
+    # 'mysql:app_eemsakuu',
+    # 'mysql:app_eemssec',
+    # 'mysql:app_eemscr',
+    # 'mysql:app_eemsman',
+    # 'mysql:app_eemsyd',
+# TODO: 15 min init and end of loop, inti values
+
 # TODO: make it a class
-t_start = time.time()
-rst_snipshot2 = snip_shot()
-print('total spend time %s' % (time.time() - t_start))
+# t_start = time.time()
+# rst_snipshot2 = snip_shot()
+# print('total spend time %s' % (time.time() - t_start))
 # rst_snipshot2_valid = [i for i in rst_snipshot2 if i]
 
 
