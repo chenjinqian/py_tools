@@ -3,7 +3,22 @@
 
 # Author: ChenJinQian
 # Email: 2012chenjinqian@gmail.com
+# TODO: workshops and equipment are not tested.
+# TODO: could use map reduce in the level of meter_id,
+#       which will be easier to reduce and extend.
+# TODO: use config file for programe behavior setting.
+# TODO: command parameters.
+# TODO: update sql_meta_default using additional amount query.
+# TODO: kwhi should check and figure out kwh reset condition.
+# TODO: meta dict could have merter_ids info, which will be more clear.
 
+"""
+doc
+this script will caculate 15min meter kwhi/p variables and add up
+the variables and write those variable into elec_company_15min table
+which those variable belongs to.
+
+"""
 
 import read_config as rcfg
 # import redis_pool as rpol  # not used
@@ -19,6 +34,7 @@ from gevent import monkey;monkey.patch_all()
 # tp4 = tpol(4)
 # gp4 = gpol(4)
 # pp4 = ppol(4)
+
 
 def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
     """read config files, and make mysql connection pool instance as dict."""
@@ -61,7 +77,7 @@ ckps_default = [0, 60*30, 60*60*3]
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='company', workers_d=mysql_workers_d):
     worker = workers_d[app]
     if option == 'price':
-        sql = 'select hours, price_p, price_f, price_v  from price_policy  where company_id=%s' % cid
+        sql = 'select hours, price_p, price_f, price_v  from price_policy  where %s_id=%s' % (comp, cid)
         rst = worker(sql)
         tmp_d = {}
         if rst:
@@ -106,6 +122,7 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='com
         else:
             rst_int = []
         return rst_int
+    # default options 'meter_id
     sql = 'select related_gmids from %s where id=%s;' % (comp, cid)
     rst = worker(sql)
     if rst:
@@ -416,7 +433,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
     for app in app_lst:
         import os, sys
         try:
-            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app)
+            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app, comp=comp)
             print(cid_list)
             # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
             # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
@@ -430,7 +447,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
     for ap_comp in rst_d.keys():
         for cid in rst_d[ap_comp].keys():
             rst_d[ap_comp][cid] = {}
-            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app)
+            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app, comp=comp)
             rst_d[ap_comp][cid]['meter_id'] = {}
             for mid in meter_id_lst:
                 if str(mid) in mids_pli_d:
@@ -439,7 +456,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
                     rst_d[ap_comp][cid]['meter_id'][str(mid)] = {}
     for ap_comp in rst_d.keys():
         for cid in rst_d[ap_comp].keys():
-            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app)
+            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app, comp=comp)
     return rst_d
 
 
@@ -626,20 +643,6 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=c
     return fee_d_default
 
 
-# sql_meta_info_default = sql_get_all_info(app_lst_default)
-# # sql_meta_info_default = {}
-# his_d_default = {}
-
-# TODO: make it a class
-# t_start = time.time()
-# rst_snipshot2 = snip_shot()
-# print('total spend time %s' % (time.time() - t_start))
-# rst_snipshot2_valid = [i for i in rst_snipshot2 if i]
-
-# TODO: kvarhi, kvarhe and q
-# TODO: 15 min init and end of loop, inti values
-
-
 def sql_op(info_dict):
     """
     info_and_dict is like:
@@ -657,15 +660,26 @@ def sql_op(info_dict):
     it should go to database app_eemsop, table elec_company_15min_2017, as
     _time and other variables.
     """
-    info_key, sub_dict
-    app_complex, comp_type, cid, t_s = info_and_dict.split('/')
-    worker = workers_d[app_complex]
+    sqls = []
+    for info_key, sd in info_dict.iteritems:
+        app_complex, comp, cid, t_s = info_key.split('/')
+        worker = workers_d[app_complex]
+        # stat_time = sd['_times']
+        sql = "insert into elec_%s_15min_%s (stat_time, company_id, charge, kwhi, kwhe, kvarhi, kvarhe, p, q) values \
+        (%s, %s, %s, %s, %s, %s, %s, %s, %s) on duplicate key update \
+        charge=charge, kwhi=kwhi, kwhe=kwhe, kvarhi=kvarhi, kvarhe=kvarhe, p=p, q=q" % \
+        (comp, time.strftime('%Y', time.localtime()), sd['_times'], cid, sd['charge'], sd['kwhi'], sd['kwhe'], \
+         sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], )
+        sqls.append(sql)
+        try:
+            worker(sql)
+        except:
+            print('except on writing dict: %s' % info_dict)
+            continue
+    return sqls
 
 
-    pass
-
-
-def snip_shot(meta_d=sql_meta_info_default, his_d=his_d_default):
+def snip_shot(meta_d={}, his_d={}):
     app_comps = meta_d.keys()
     def produce_task(meta_d=meta_d):
         for app_comp in app_comps:
@@ -679,7 +693,19 @@ def snip_shot(meta_d=sql_meta_info_default, his_d=his_d_default):
     # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
     # p90 = gpol(3)
     rst_snp = map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
+    sql_ops = map(sql_op, (d for d in rst_snp))
+    # no exception here.
     return rst_snp
+
+
+# TODO: make it a class
+# t_start = time.time()
+# rst_snipshot2 = snip_shot()
+# print('total spend time %s' % (time.time() - t_start))
+# rst_snipshot2_valid = [i for i in rst_snipshot2 if i]
+
+# TODO: kvarhi, kvarhe and q
+# TODO: 15 min init and end of loop, inti values
 
 
 def test_redis(fn=get_near_keys, lst = [2, 0 ], args={}):
@@ -732,16 +758,32 @@ pli_one = {'ctnum': '2',
              'use_energy': '0',
              'use_power': '0'}
 
-fee_d_one = {'charge': 113.58967685162,
-             'kwhe': 0.0,
-             'kwhi': 194.3032447,
-             'p': 777.2129788,
-             'spfv': 'f',
-             '_times': '20170111_193000'}
+fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000': {'_times': '20170118_084500',
+                                                             '_use_energy': '0',
+                                                             '_use_power': '1',
+                                                             'charge': 20.29067898072979,
+                                                             'kvarhe': 0.0,
+                                                             'kvarhi': 19.418229123716426,
+                                                             'kwhe': 0.0,
+                                                             'kwhi': 64.06908424606817,
+                                                             'p': 256.2763369842727,
+                                                             'q': 77.6729164948657,
+                                                             'spfv': 'v'}}
 
 
 def main():
-    pass
+    sql_meta_info_default = sql_get_all_info(app_lst_default)
+    his_d_default = {}
+    cunter = 0
+    # TODO: command parameter.
+    while True:
+        cunter += 1
+        s1 = snip_shot(sql_meta_info_default, his_d_default)
+        if cunter > 5:
+            cunter = 0
+            sql_meta_info_default = sql_get_all_info(app_lst_default)
+        how_about_sleep()
+
 
 if __name__ == '__main__':
     main()
