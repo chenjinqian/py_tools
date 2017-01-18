@@ -58,8 +58,8 @@ vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], 
 ckps_default = [0, 60*30, 60*60*3]
 
 
-def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='company'):
-    worker = mysql_workers_d[app]
+def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemscr', comp='company', workers_d=mysql_workers_d):
+    worker = workers_d[app]
     if option == 'price':
         sql = 'select hours, price_p, price_f, price_v  from price_policy  where company_id=%s' % cid
         rst = worker(sql)
@@ -460,6 +460,8 @@ def apply_pli(vr_d, price_d, pli_d, interval=900):
     tmp_d = {}
     # print(vr_d, price_d, pli_d)
     index = 3
+    if not price_d:
+        return {}
     tmp_d['spfv'] = price_d['hours'][int(vr_d['_times'][9:11]) - 1]
     rate = price_d[tmp_d['spfv']]
     trans_factor = float(60 * 60 / interval)  # when caculate
@@ -467,19 +469,23 @@ def apply_pli(vr_d, price_d, pli_d, interval=900):
         # TODO: Notice, here, change pli_ if data not avaible.
         # default value changed to 1.
         # pttl have two value as list, p+ and p-
+        tmp_d['_use_energy'] = '0'
         tmp_d['kwhi'] = None if vr_d['pttl'][0] is None else (vr_d['pttl'][0] / trans_factor)
         tmp_d['kwhe'] = None if vr_d['pttl'][1] is None else (vr_d['pttl'][1] / trans_factor)
         tmp_d['kvarhi'] = vr_d['qttl'][0]
-        tmp_d['kvarhi'] = vr_d['qttl'][1]
+        tmp_d['kvarhe'] = vr_d['qttl'][1]
     else:
+        tmp_d['_use_energy'] = pli_d['use_energy']
         tmp_d['kwhi'] = vr_d['kwhttli']
         tmp_d['kwhe'] = vr_d['kwhttle']
         tmp_d['kvarhi'] = vr_d['kvarhttli']
         tmp_d['kvarhe'] = vr_d['kvarhttle']
     if  pli_d['use_power'] == '0':
+        tmp_d['_use_power'] = '0'
         tmp_d['p'] = vr_d['kwhttli'] * trans_factor
         tmp_d['q'] = vr_d['kvarhttli'] * trans_factor
     else:
+        tmp_d['_use_power'] = pli_d['use_power']
         # TODO: confirm p add up method.
         tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
         # Notice: 60 * 60 / interval
@@ -620,9 +626,44 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemscr', comp='company', ckps=c
     return fee_d_default
 
 
-sql_meta_info_default = sql_get_all_info(app_lst_default)
-# sql_meta_info_default = {}
-his_d_default = {}
+# sql_meta_info_default = sql_get_all_info(app_lst_default)
+# # sql_meta_info_default = {}
+# his_d_default = {}
+
+# TODO: make it a class
+# t_start = time.time()
+# rst_snipshot2 = snip_shot()
+# print('total spend time %s' % (time.time() - t_start))
+# rst_snipshot2_valid = [i for i in rst_snipshot2 if i]
+
+# TODO: kvarhi, kvarhe and q
+# TODO: 15 min init and end of loop, inti values
+
+
+def sql_op(info_dict):
+    """
+    info_and_dict is like:
+    {'mysql:app_eemsop/company/38/20170118_064500': {'_times': '20170118_063000',
+    'charge': 62.03528756860898,
+    'kvarhi': -17.749406617955692,
+    'kwhe': 0.0,
+    'kwhi': 166.26986751168315,
+    'p': 2660.3178801869303,
+    'q': 477.80727717022285,
+    'spfv': 'v'},
+    ...
+    }
+
+    it should go to database app_eemsop, table elec_company_15min_2017, as
+    _time and other variables.
+    """
+    info_key, sub_dict
+    app_complex, comp_type, cid, t_s = info_and_dict.split('/')
+    worker = workers_d[app_complex]
+
+
+    pass
+
 
 def snip_shot(meta_d=sql_meta_info_default, his_d=his_d_default):
     app_comps = meta_d.keys()
@@ -636,27 +677,9 @@ def snip_shot(meta_d=sql_meta_info_default, his_d=his_d_default):
                 # yield [int(cid), app]
                 yield (int(cid), app)
     # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
-    p90 = gpol(90)
-    rst_snp = p90.map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=sql_meta_info), (i for i in produce_task()))
+    # p90 = gpol(3)
+    rst_snp = map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
     return rst_snp
-
-
-# TODO: kvarhi, kvarhe and q
-    # 'mysql:app_eemsii',
-    # 'mysql:app_eemsdemo',
-    # 'mysql:meterinfo',
-    # 'mysql:app_eemsakuu',
-    # 'mysql:app_eemssec',
-    # 'mysql:app_eemscr',
-    # 'mysql:app_eemsman',
-    # 'mysql:app_eemsyd',
-# TODO: 15 min init and end of loop, inti values
-
-# TODO: make it a class
-# t_start = time.time()
-# rst_snipshot2 = snip_shot()
-# print('total spend time %s' % (time.time() - t_start))
-# rst_snipshot2_valid = [i for i in rst_snipshot2 if i]
 
 
 def test_redis(fn=get_near_keys, lst = [2, 0 ], args={}):
