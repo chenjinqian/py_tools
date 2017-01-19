@@ -61,8 +61,9 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
     pol_d = {}
     for db in db_lst:
         # pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor
-        p = redis.ConnectionPool(**cfgd[db])
-        r = redis.Redis(connection_pool=p)
+        # p = redis.ConnectionPool(**cfgd[db])
+        # r = redis.Redis(connection_pool=p)
+        r = redis.Redis(**cfgd[db])
         pol_d[db] = r
     return pol_d
 
@@ -632,9 +633,10 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
 
     t_s = time.time()
     # print(len(mk_redis_tasks(mids, ckps)))
-    tp = gpol(n)
+    # tp = gpol(n)
     # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
-    redis_rcds = tp.map(rd_acc, mk_redis_tasks())
+    # redis_rcds = tp.map(rd_acc, mk_redis_tasks())
+    redis_rcds = map(rd_acc, mk_redis_tasks())
     # t_b = time.time()
     # TODO: pipe the data process, which will save RAM.
     vrs_extr = [i for i in map(vrs_parse, redis_rcds) if i]
@@ -703,7 +705,8 @@ def snip_shot(meta_d={}, his_d={}):
                 # yield [int(cid), app]
                 yield (int(cid), app)
     # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
-    # p90 = gpol(3)
+    # cp9 = gpol(9)
+    # rst_snp = cp9.map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
     rst_snp = map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
     sql_ops = map(sql_op, (d for d in rst_snp))
     # no exception here.
@@ -783,8 +786,9 @@ fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000': {'_times': '20170118
                                                              'spfv': 'v'}}
 
 
-def main():
-    sql_meta_info_default = sql_get_all_info(app_lst_default)
+def main(app_lst=app_lst_default, shift=180):
+    # TODO: sys argment parse, app_lst, and shift
+    sql_meta_info_default = sql_get_all_info(app_lst)
     his_d_default = {}
     cunter = 0
     # TODO: command parameter.
@@ -794,7 +798,7 @@ def main():
         if cunter > 5:
             cunter = 0
             sql_meta_info_default = sql_get_all_info(app_lst_default)
-        how_about_sleep()
+        how_about_sleep(shift)
 
 
 if __name__ == '__main__':
