@@ -15,6 +15,7 @@
 # TODO: raise up the mysql_pool exception. now it will print
 #       some exception info.
 #       two connections, one have commit sth, another will not notice. weird.
+# TODO: use global dict for default setting.
 
 """
 doc
@@ -212,7 +213,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
         incr['_times'] = ts_ckp[0]
         if vr[1] == 0:
             # incr.append([vr,ts_ckp[0], pstv(ckp[1], hst[1])])
-            ### bug 1, 0
+            ### bug 1, 0, fixed
             incr[vr[0]] = pstv(hst[1], ckp[1])
             # Notice: use leftside of the time section.
         elif vr[1] == 1:
@@ -258,7 +259,7 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     keys_right = time_lst(ckp_shift, left=False)
     lk1, lk2 = keys_left[0]
     rk1, rk2 = keys_right[0]
-    ### added
+    # # added pipeline
     if not left_null:
         p.hgetall('meterdata_%s_%s' % (mid, lk1))
     else:
@@ -678,11 +679,15 @@ def sql_op(info_dict, workers_d=mysql_workers_d):
         app_complex, comp, cid, t_s = info_key.split('/')
         worker = workers_d[app_complex]
         # stat_time = sd['_times']
-        sql = "insert into elec_%s_15min_%s (stat_time, company_id, charge, kwhi, kwhe, kvarhi, kvarhe, p, q, spfv) values \
-        ('%s', '%s', '%s', %s, '%s', '%s', '%s', '%s', '%s', '%s') on duplicate key update \
-        charge=charge, kwhi=kwhi, kwhe=kwhe, kvarhi=kvarhi, kvarhe=kvarhe, p=p, q=q, spfv=spfv" % \
-        (comp, time.strftime('%Y', time.localtime()), sd['_times'], int(cid), sd['charge'], sd['kwhi'], sd['kwhe'], \
-         sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'])
+        ### NOTICE: write kwh as well as kwhi
+        sql = "insert into elec_%s_15min_%s (stat_time,company_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv, kwh) values \
+        ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s','%s') on duplicate key update \
+        charge='%s', kwhi='%s', kwhe='%s', kvarhi='%s', kvarhe='%s', p='%s', q='%s', spfv='%s', kwh='%s'" % \
+        (comp,time.strftime('%Y',time.localtime()),sd['_times'],int(cid),sd['charge'],sd['kwhi'],sd['kwhe'],
+         sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'],
+         sd['kwhi'],
+         sd['charge'],sd['kwhi'],sd['kwhe'],sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'],
+         sd['kwhi'])
         sqls.append(sql)
         try:
             worker(sql, commit=True)
