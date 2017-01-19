@@ -653,7 +653,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
 def sql_op(info_dict, workers_d=mysql_workers_d):
     """
     info_and_dict is like:
-    {'mysql:app_eemsop/company/38/20170118_064500': {'_times': '20170118_063000',
+    {'mysql:app_eemsop/company/38/20170118_064500': {'_times': '2017-01-18 06:30:00',
     'charge': 62.03528756860898,
     'kvarhi': -17.749406617955692,
     'kwhe': 0.0,
@@ -773,7 +773,7 @@ pli_one = {'ctnum': '2',
              'use_energy': '0',
              'use_power': '0'}
 
-fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000': {'_times': '20170118_084500',
+fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000': {'_times': '2017-01-18 08:45:00',
                                                              '_use_energy': '0',
                                                              '_use_power': '1',
                                                              'charge': 20.29067898072979,
