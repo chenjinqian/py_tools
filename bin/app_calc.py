@@ -212,7 +212,8 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
         incr['_times'] = ts_ckp[0]
         if vr[1] == 0:
             # incr.append([vr,ts_ckp[0], pstv(ckp[1], hst[1])])
-            incr[vr[0]] = pstv(ckp[1], hst[1])
+            ### bug 1, 0
+            incr[vr[0]] = pstv(hst[1], ckp[1])
             # Notice: use leftside of the time section.
         elif vr[1] == 1:
             incr[vr[0]] = sumup(hst, v_left, ckp, v_right, vr[0], 'a')
@@ -624,6 +625,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
         # time.sleep(1000)
         # print(vr_d)
         fee_meter_new = apply_pli(vr_d, price_info_d, pli_info_d)
+        # print( 'vr_d',vr_d)
         if not cid_fee_key in fee_d:
             fee_d[cid_fee_key] = fee_meter_new
         else:
