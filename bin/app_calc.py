@@ -79,10 +79,11 @@ default_d['rsrv'] = 'redis:meter'
 default_d['app_lst'] = ['mysql:app_eemsop']
 default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
 default_d['ckps'] = [0, 60*30, 60*60*3]
-rsrv_default = default['rsrv']
-app_lst_default = default['app_lst']
-vrs_s_default = default['vrs_s']
-ckps_default = default['ckps']
+# Notice: this should not overlap nore be neared, if the first round init problem is not solved.
+rsrv_default = default_d['rsrv']
+app_lst_default = default_d['app_lst']
+vrs_s_default = default_d['vrs_s']
+ckps_default = default_d['ckps']
 
 
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='company', workers_d=mysql_workers_d):
@@ -545,6 +546,8 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
         # return '%s_%s_%s_%s_%s_%s' % (app, comp, cid, mid, t, ckp_ts)
         if no_mid:
             return '%s/%s/%s/%s' % (app, comp, cid, ckp_ts)
+        # Notice: The reason why no t here, is that it can not init the history at the first round.
+        # for example: ...
         return '%s/%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts, t)
 
     one_comp_mids = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'].keys()
@@ -591,17 +594,25 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
         # print('mid', mid)
         return [meta_info, rlt_4]
 
+    def first_round_init_patch(s, interval=interval):
+        ss = s.split('/')
+        ori_t = int(ss[-1])
+        new_t = ori_t - interval
+        ss[-1] = str(new_t)
+        return '/'.join(ss)
+
     def vrs_parse(sect): # use vrs_s outer_side info
         [[key_0, key_1], [v_left, v_near, ts_ckp, v_right]] = sect
         # TODO: try
         # print(key_0, key_1)
         if not key_0 in his_d:
             ckp_values = kwh_interval(v_near, history=[], vrs_s=vrs_s)
-            his_d[key_1] = ckp_values
+            patch_key_1 = first_round_init_patch(key_1)
+            his_d[patch_key_1] = ckp_values
             return []
         else:
             ckp_values = kwh_interval(v_near, history=his_d[key_0], vrs_s=vrs_s)
-            his_d[key_1] = ckp_values
+            his_d[key_1] = ckp_values if ckp_values else his_d[key_0]
             # print(ckp_values)
             incr = incr_sumup(his_d.pop(key_0), v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
             return [key_1, incr]
