@@ -548,7 +548,8 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
             return '%s/%s/%s/%s' % (app, comp, cid, ckp_ts)
         # Notice: The reason why no t here, is that it can not init the history at the first round.
         # for example: ...
-        return '%s/%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts, t)
+        # return '%s/%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts, t)
+        return '%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts)
 
     one_comp_mids = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'].keys()
     # TODO: use global dict, cache at first 15 mins
@@ -607,8 +608,11 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
         # print(key_0, key_1)
         if not key_0 in his_d:
             ckp_values = kwh_interval(v_near, history=[], vrs_s=vrs_s)
-            patch_key_1 = first_round_init_patch(key_1)
-            his_d[patch_key_1] = ckp_values
+            # patch_key_1 = first_round_init_patch(key_1)
+            # his_d[patch_key_1] = ckp_values
+            # his_d[key_1] = ckp_values
+            # TODO: this is not neccessary, cause kwh_interval should inherit history value for each parameter.
+            his_d[key_1] = ckp_values
             return []
         else:
             ckp_values = kwh_interval(v_near, history=his_d[key_0], vrs_s=vrs_s)
