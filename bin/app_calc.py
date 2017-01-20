@@ -74,10 +74,15 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
 cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
 mysql_workers_d = mk_mp_d()
 redis_cursors_d = mk_rp_d()
-rsrv_default = 'redis:meter'
-app_lst_default = ['mysql:app_eemsop']
-vrs_s_default = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
-ckps_default = [0, 60*30, 60*60*3]
+default_d = {}
+default_d['rsrv'] = 'redis:meter'
+default_d['app_lst'] = ['mysql:app_eemsop']
+default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
+default_d['ckps'] = [0, 60*30, 60*60*3]
+rsrv_default = default['rsrv']
+app_lst_default = default['app_lst']
+vrs_s_default = default['vrs_s']
+ckps_default = default['ckps']
 
 
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='company', workers_d=mysql_workers_d):
@@ -540,7 +545,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
         # return '%s_%s_%s_%s_%s_%s' % (app, comp, cid, mid, t, ckp_ts)
         if no_mid:
             return '%s/%s/%s/%s' % (app, comp, cid, ckp_ts)
-        return '%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts)
+        return '%s/%s/%s/%s/%s/%s' % (app, comp, cid, mid, ckp_ts, t)
 
     one_comp_mids = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'].keys()
     # TODO: use global dict, cache at first 15 mins
@@ -598,7 +603,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
             ckp_values = kwh_interval(v_near, history=his_d[key_0], vrs_s=vrs_s)
             his_d[key_1] = ckp_values
             # print(ckp_values)
-            incr = incr_sumup(his_d[key_0], v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
+            incr = incr_sumup(his_d.pop(key_0), v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
             return [key_1, incr]
 
     fee_d_default = {}
