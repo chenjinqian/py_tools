@@ -31,8 +31,8 @@ import mysql_pool as mpol
 import redis
 import time
 import itertools
-from gevent.pool import Pool as gpol
-from gevent import monkey;monkey.patch_all()
+# from gevent.pool import Pool as gpol
+# from gevent import monkey;monkey.patch_all()
 
 # from multiprocessing.dummy import Pool as tpol
 # from multiprocessing import Pool as ppol
@@ -42,7 +42,7 @@ from gevent import monkey;monkey.patch_all()
 
 
 def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
-    """read config files, and make mysql connection pool instance as dict."""
+    """make_mysqlpool_dictory, read config files, and make mysql connection pool instance as dict."""
     cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
     db_lst = [i for i in cfgd.keys() if mark in i]
     pol_d = {}
@@ -57,6 +57,7 @@ def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
 
 
 def mk_rp_d(ini='../config/db.ini', mark='redis:'):
+    """make_redispool_dictory"""
     cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
     db_lst = [i for i in cfgd.keys() if mark in i]
     pol_d = {}
@@ -145,11 +146,16 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='com
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
+    """get data of one meter(mid) near the given checkpoint, and calculate values in the checkpoint using interval method,
+    if there is history, then use  history to get increase amount, if not, incr is none.
+    ckp_values(checkpoint values) could be used as history in next round."""
     # """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
     # t_start = time.time()
     v_left, v_near, ts_ckp, v_right = get_near_keys(mid, time_ckp, interval=interval, rsrv=rsrv, left_null=left_null)
+    #
     # print(mid, time_ckp, time.time() - t_start)
     ckp_values = kwh_interval(v_near, history=history, vrs_s=vrs_s)
+    # ckp_values is a list, same shape as vrs_s.
     incr = incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
     return [incr, ckp_values]
 
@@ -283,7 +289,7 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     if not left_null:
         left_values = l_dok
         try:
-            left_key = sorted(left_values.keys())[-1] if left_values else None
+            left_key = sorted(left_values.keys(), reverse=True)[0] if left_values else None
             # print('left_key %s' % left_key)
         except:
             print(type(left_key), left_key)
@@ -340,18 +346,23 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     # TODO: right keys is not used, could return none.
     # TODO: use keys in redis cursor, get values in four time.
     # chose value nearist in time, but not far than 900s.
-    res_d = {}
+    res_d = {'left':{}, 'right':{}}
     if left_key:
-        res_d[left_key] = left_value
+        res_d['left'][left_key] = left_value
     if right_key:
-        res_d[right_key] = right_value
+        res_d['right'][right_key] = right_value
     ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
     return [left_values, res_d, ts_ckp, right_values]
 
 
 def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
-    """d is like {'20170106_121445':'kwhttli=12,kwhttle=1,pttli=2,pttle=3', '20170106_121509':'kwhttli=18,kwhttle=1.3,pttli=4,pttle=3.2'}"""
+    """d is like {'20170106_121445':'kwhttli=12,kwhttle=1,pttli=2,pttle=3',
+    '20170106_121509':'kwhttli=18,kwhttle=1.3,pttli=4,pttle=3.2'}
+    change it into {'left':{'ts':'value'}, 'right':{'ts':'value'}}
+
+    """
     vrs = [i[0] for i in vrs_s]
+    # vrs_s is like [['pttl', 1], ['kwhttl', 2]]
     def vr_parse(ss, var_str):
         """ss is like ['var1=num1', 'var2=num2']"""
         try:
@@ -589,6 +600,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
 
     def rd(cid, mid, t, left_null):
         rlt_4 = get_near_keys(mid, t, interval=interval, rsrv=rsrv, left_null=left_null)
+        # rlt_4 is like [left_values, res_d, ts_ckp, right_values]
         # info_str = 'app%s_comp%s_%s_%s_%s_%s' % (app,comp, cid, mid, t, rlt_4[2][1])
         meta_info = [mk_his_key(mid, t, rlt_4[2][0]), mk_his_key(mid, t, rlt_4[2][1])]
         # rlt_4[2] is ts_ckp, will always have values, like ['20170111_120000', '20170111_121500']
