@@ -240,7 +240,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
     return incr
 
 
-def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True):
+def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=6):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
     r = redis_cursors_d[rsrv]
     p = r.pipeline(transaction=True)
@@ -289,33 +289,39 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     if not left_null:
         left_values = l_dok
         try:
-            left_key = sorted(left_values.keys(), reverse=True)[0] if left_values else None
+            left_key = sorted(left_values.keys(), reverse=True)[0:min(len(left_values.keys()), near)] if left_values else None
             # print('left_key %s' % left_key)
         except:
-            print(type(left_key), left_key)
-        left_value = left_values[left_key] if left_key else None
+            # print(type(left_key), left_key)
+            import sys, os
+            print(str(sys.exc_info()))
+        left_value = [left_values[i] for i in left_key] if left_key else None
     else:
         left_keys_raw = l_dok
-        left_keys = sorted(left_keys_raw)
-        left_key = left_keys[-1] if left_keys else None
+        left_keys = sorted(left_keys_raw, reverse=True)
+        left_key = left_keys[0:min(len(left_keys), near)] if left_keys else None
         # print('left_key %s' % left_key)
         if left_key:
-            p.hget('meterdata_%s_%s' % (mid, lk1), left_key)
-            [left_value] = p.execute()
+            for i in left_key:
+                p.hget('meterdata_%s_%s' % (mid, lk1), i)
+            left_value = p.execute()
         else:
             left_value = None
     if not right_null:
         right_values = r_dok
-        right_key = sorted(right_values.keys())[0] if right_values else None
-        right_value = right_values[right_key] if right_key else None
+        n = min(len(right_values.keys(), near))
+        right_key = sorted(right_values.keys())[0:n] if right_values else None
+        ##
+        right_value = [right_values[i] for i in right_key] if right_key else None
     else:
         right_keys_raw = r_dok
         right_keys = sorted(right_keys_raw)
-        right_key = right_keys[0] if right_keys else None
+        right_key = right_keys[0:min(len(right_keys), near)] if right_keys else None
         # print('right_key %s' % right_key)
         if right_key:
-            p.hget('meterdata_%s_%s' % (mid, rk1), right_key)
-            [right_value] = p.execute()
+            for i in right_key:
+                p.hget('meterdata_%s_%s' % (mid, rk1), i)
+            right_value = p.execute()
         else:
             right_value = None
     # left_key = None if not left_keys else left_keys[-1]
@@ -348,18 +354,20 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     # chose value nearist in time, but not far than 900s.
     res_d = {'left':{}, 'right':{}}
     if left_key:
-        res_d['left'][left_key] = left_value
+        for i, j  in zip(left_key, left_value):
+            # res_d['left'][left_key] = left_value
+            res_d['left'][i] = j
     if right_key:
-        res_d['right'][right_key] = right_value
+        for i, j in zip(right_key, right_value):
+            # res_d['right'][right_key] = right_value
+            res_d['right'][i] = j
     ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
     return [left_values, res_d, ts_ckp, right_values]
 
 
 def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
-    """d is like {'20170106_121445':'kwhttli=12,kwhttle=1,pttli=2,pttle=3',
-    '20170106_121509':'kwhttli=18,kwhttle=1.3,pttli=4,pttle=3.2'}
-    change it into {'left':{'ts':'value'}, 'right':{'ts':'value'}}
-
+    """d is like {'left':{'20170106_121445':'kwhttli=12,kwhttle=1,pttli=2,pttle=3'},
+    'right':{'20170106_121509':'kwhttli=18,kwhttle=1.3,pttli=4,pttle=3.2'}}
     """
     vrs = [i[0] for i in vrs_s]
     # vrs_s is like [['pttl', 1], ['kwhttl', 2]]
@@ -386,18 +394,23 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
         return rt
 
     # print('vrs is:%s' % (vrs))
-    if not d:
+    if not (d['left'] and d['right']):
         return history
-    ks = sorted(d.keys())
+    ks_left = sorted(d['left'].keys(), reverse=True)
+    ks_right = sorted(d['right'].keys())
     vrs_all = []
     # rst1 = [] # kwhttli
     # rst2 = [] # kwhttle
-    for k in ks:
-        val = d[k]
+    for k in ks_left:
+        val = d['left'][k]
         time_int = int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
         lst = val.split(',')
         vrs_num_acc = [[time_int, vr_parse(lst, i)] for i in vrs]
         vrs_all.append(vrs_num_acc)
+    for k in ks_right:
+        val = d['right'][k]
+
+        #
     # vrs_all is like [[[1221212, 3.2], [12323213, 4.1],...], [[], [], ...]]
     if len(vrs_all) == 1:
         vrs_1 = vrs_2 = vrs_all[0]
