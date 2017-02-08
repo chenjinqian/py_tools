@@ -188,10 +188,11 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=vrs_s_de
         left_keys = sorted(v_left.keys())
         # right_keys = sorted(v_right.keys())
         # int_v_right = [[int_f_k(k), float(v_right[k])] for k in right_keys]
-        int_v_left = [[int_f_k(k), vr_parse2(v_left[k], vr)] for k in left_keys]
+        int_v_left = [[int_f_k(k), vr_parse2(v_left[k], vr)] for k in left_keys if vr_parse2(v_left[k], vr)]
         int_hst = [[int_f_k(ts_ckp[0]), hst_one]]
         int_ckp = [[int_f_k(ts_ckp[1]), ckp_one]]
         # # use new checkpoint time_string, cause history can be inhere
+        # #
         ti_value_all = int_hst + int_v_left + int_ckp
         v_sum = float(0)
         def po(n):
@@ -455,9 +456,9 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
         if (a is None and b is None):
             rst.append(['00000000_000000', None])
             continue
-        if not a[1]:
+        if not a:
             a = b
-        if not b[1]:
+        if not b:
             b = a
             b[0] = a[0] + interval - 1
         x0, y0 = iv(a + b)
