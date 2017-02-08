@@ -240,7 +240,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
     return incr
 
 
-def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=6):
+def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=10):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
     r = redis_cursors_d[rsrv]
     p = r.pipeline(transaction=True)
@@ -399,26 +399,62 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     ks_left = sorted(d['left'].keys(), reverse=True)
     ks_right = sorted(d['right'].keys())
     vrs_all = []
+    vrs_1 = []
+    vrs_2 = []
     # rst1 = [] # kwhttli
     # rst2 = [] # kwhttle
-    for k in ks_left:
-        val = d['left'][k]
-        time_int = int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
-        lst = val.split(',')
-        vrs_num_acc = [[time_int, vr_parse(lst, i)] for i in vrs]
-        vrs_all.append(vrs_num_acc)
-    for k in ks_right:
-        val = d['right'][k]
-
-        #
+    # """"""
+    for i in vrs:
+        have_value = False
+        for k in ks_left:
+            val = d['left'][k]
+            time_int = int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
+            lst = val.split(',')
+            vrs_value = vr_parse(lst, i)
+            if vrs_value is not None:
+                vrs_1.append([time_int, vrs_value])
+                have_value = True
+                break
+            else:
+                continue
+        if not have_value:
+            vrs_1.append(None)
+            # vrs_num_acc = [[time_int, vr_parse(lst, i)] for i in vrs]
+            # vrs_all.append(vrs_num_acc)
+    for i in vrs:
+        have_value = False
+        for k in ks_right:
+            val = d['right'][k]
+            time_int = int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
+            lst = val.split(',')
+            # if i == 'qttl':
+            #     print(lst)
+            vrs_value = vr_parse(lst, i)
+            if vrs_value is not None:
+                vrs_2.append([time_int, vrs_value])
+                break
+            else:
+                continue
+        if not have_value:
+            vrs_2.append(None)
     # vrs_all is like [[[1221212, 3.2], [12323213, 4.1],...], [[], [], ...]]
-    if len(vrs_all) == 1:
-        vrs_1 = vrs_2 = vrs_all[0]
-    else:
-        vrs_1, vrs_2 = vrs_all
+    # vrs_left is like [[1221212, 3.2], [12323213, 4.1],...], [], [], ...]
+    # if len(vrs_all) == 1:
+    #     vrs_1 = vrs_2 = vrs_all[0]
+    # else:
+    #     vrs_1, vrs_2 = vrs_all
     # TODO: if only one side have values.s
+    print(vrs)
+    print(vrs_1, vrs_2)
     rst = []
     for a, b in zip(vrs_1, vrs_2):
+        if not a:
+            a = b
+        if not b:
+            b = a
+        if not (a or b):
+            rst.append(None)
+            continue
         x0, y0 = iv(a + b)
         rst.append([time.strftime('%Y%m%d_%H%M%S', time.localtime(x0)), y0])
     return rst
