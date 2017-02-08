@@ -160,7 +160,7 @@ def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=90
     return [incr, ckp_values]
 
 
-def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhttli', 0]]):
+def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=vrs_s_default):
     """history is """
     if not history or not v_left or not ckp_values:
         return None
@@ -223,6 +223,9 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
     incr = {}
     for hst, ckp, vr in zip(history, ckp_values, vrs_s):
         incr['_times'] = ts_ckp[0]
+        if not (hst and ckp):
+            incr[vr[0]] = None
+            continue
         if vr[1] == 0:
             # incr.append([vr,ts_ckp[0], pstv(ckp[1], hst[1])])
             ### bug 1, 0, fixed
@@ -240,7 +243,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=[['kwhtt
     return incr
 
 
-def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=10):
+def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=900):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
     r = redis_cursors_d[rsrv]
     p = r.pipeline(transaction=True)
@@ -403,7 +406,7 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     vrs_2 = []
     # rst1 = [] # kwhttli
     # rst2 = [] # kwhttle
-    # """"""
+    # """TODO, in this place, I could use generator to get next vrs pair."""
     for i in vrs:
         have_value = False
         for k in ks_left:
@@ -419,6 +422,7 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
                 continue
         if not have_value:
             vrs_1.append(None)
+            # # old code
             # vrs_num_acc = [[time_int, vr_parse(lst, i)] for i in vrs]
             # vrs_all.append(vrs_num_acc)
     for i in vrs:
@@ -444,17 +448,18 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     # else:
     #     vrs_1, vrs_2 = vrs_all
     # TODO: if only one side have values.s
-    print(vrs)
-    print(vrs_1, vrs_2)
+    # print(vrs)
+    # print(vrs_1, vrs_2)
     rst = []
     for a, b in zip(vrs_1, vrs_2):
-        if not a:
-            a = b
-        if not b:
-            b = a
-        if not (a or b):
-            rst.append(None)
+        if (a is None and b is None):
+            rst.append(['00000000_000000', None])
             continue
+        if not a[1]:
+            a = b
+        if not b[1]:
+            b = a
+            b[0] = a[0] + interval - 1
         x0, y0 = iv(a + b)
         rst.append([time.strftime('%Y%m%d_%H%M%S', time.localtime(x0)), y0])
     return rst
@@ -576,7 +581,7 @@ def apply_pli(vr_d, price_d, pli_d, interval=900):
         tmp_d['q'] = vr_d['kvarhttli'] * trans_factor
     else:
         tmp_d['_use_power'] = pli_d['use_power']
-        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
+        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else N_compone
         tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * 4) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
         # TODO: confirm p add up method.
         # Notice: 60 * 60 / interval
@@ -598,7 +603,7 @@ def key_get_out(ks, n=3):
     return new_s[:-1], s_out
 
 
-def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d={}, sql_meta_info={}):
+def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d={}, sql_meta_info={}, print_redis_rcds=False):
     # TODO: pttl unit is hour.
     if not sql_meta_info:
         return {}
@@ -721,6 +726,8 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
     # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
     # redis_rcds = tp.map(rd_acc, mk_redis_tasks())
     redis_rcds = map(rd_acc, mk_redis_tasks())
+    if print_redis_rcds:
+        print(redis_rcds)
     # t_b = time.time()
     # TODO: pipe the data process, which will save RAM.
     vrs_extr = [i for i in map(vrs_parse, redis_rcds) if i]
@@ -781,7 +788,7 @@ def sql_op(info_dict, workers_d=mysql_workers_d):
     return sqls
 
 
-def snip_shot(meta_d={}, his_d={}):
+def snip_shot(meta_d={}, his_d={}, no_sql_op = False):
     app_comps = meta_d.keys()
     def produce_task(meta_d=meta_d):
         for app_comp in app_comps:
@@ -789,14 +796,15 @@ def snip_shot(meta_d={}, his_d={}):
             print(app)
             cids = meta_d[app_comp].keys()
             for cid in cids:
-                print(cid)
+                # print(cid)
                 # yield [int(cid), app]
                 yield (int(cid), app)
     # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
     # cp9 = gpol(9)
     # rst_snp = cp9.map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
     rst_snp = map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
-    sql_ops = map(sql_op, (d for d in rst_snp))
+    if not no_sql_op:
+        sql_ops = map(sql_op, (d for d in rst_snp))
     # no exception here.
     return rst_snp
 
