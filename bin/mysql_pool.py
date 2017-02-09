@@ -143,11 +143,12 @@ class MySQLWrapper(object):
                 try:
                     con.rollback()
                     con.close()
+                    self.pool.returnConnection(con)
                     # TODO: it is not easy to find out 'server go away' situation, should I just return None back?
                     # raise errors?
                 except:
+                    self.pool.returnConnection(None)
                     pass
-            self.pool.returnConnection(None)
             return None
 
 

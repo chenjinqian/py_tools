@@ -31,8 +31,8 @@ import mysql_pool as mpol
 import redis
 import time
 import itertools
-# from gevent.pool import Pool as gpol
-# from gevent import monkey;monkey.patch_all()
+from gevent.pool import Pool as gpol
+from gevent import monkey;monkey.patch_all()
 
 # from multiprocessing.dummy import Pool as tpol
 # from multiprocessing import Pool as ppol
@@ -609,7 +609,9 @@ def key_get_out(ks, n=3):
     return new_s[:-1], s_out
 
 
-def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d={}, sql_meta_info={}, print_redis_rcds=False):
+def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
+             ckps=ckps_default, interval=900, vrs_s=vrs_s_default,
+             rsrv=rsrv_default, his_d={}, sql_meta_info={}, print_redis_rcds=False):
     """
 
     """
@@ -880,17 +882,18 @@ pli_one = {'ctnum': '2',
              'use_energy': '0',
              'use_power': '0'}
 
-fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000': {'_times': '2017-01-18 08:45:00',
-                                                             '_use_energy': '0',
-                                                             '_use_power': '1',
-                                                             'charge': 20.29067898072979,
-                                                             'kvarhe': 0.0,
-                                                             'kvarhi': 19.418229123716426,
-                                                             'kwhe': 0.0,
-                                                             'kwhi': 64.06908424606817,
-                                                             'p': 256.2763369842727,
-                                                             'q': 77.6729164948657,
-                                                             'spfv': 'v'}}
+fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000':
+             {'_times': '2017-01-18 08:45:00',
+              '_use_energy': '0',
+              '_use_power': '1',
+              'charge': 20.29067898072979,
+              'kvarhe': 0.0,
+              'kvarhi': 19.418229123716426,
+              'kwhe': 0.0,
+              'kwhi': 64.06908424606817,
+              'p': 256.2763369842727,
+              'q': 77.6729164948657,
+              'spfv': 'v'}}
 
 
 def main(app_lst=app_lst_default, shift=180):
@@ -909,4 +912,8 @@ def main(app_lst=app_lst_default, shift=180):
 
 
 if __name__ == '__main__':
-    main()
+    while True:
+        try:
+            main()
+        except:
+            time.sleep(60)
