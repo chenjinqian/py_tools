@@ -146,13 +146,17 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='com
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
-    """get data of one meter(mid) near the given checkpoint, and calculate values in the checkpoint using interval method,
-    if there is history, then use  history to get increase amount, if not, incr is none.
-    ckp_values(checkpoint values) could be used as history in next round."""
+    """
+    therre are three main step to caculate one meter,
+    first, get data (for given meter id) near checkpoint from redis server using get_near_keys method.
+    Then, parse the data, and get vriable interval values at checkpoiint, these values return as list, same as vrs_s.
+    Last, use last round interval value list as history, caculate variable(vrs) increase between two checkpoint(ckp).
+    return incr and ckp_values.
+    """
     # """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
     # t_start = time.time()
     v_left, v_near, ts_ckp, v_right = get_near_keys(mid, time_ckp, interval=interval, rsrv=rsrv, left_null=left_null)
-    #
+    # #
     # print(mid, time_ckp, time.time() - t_start)
     ckp_values = kwh_interval(v_near, history=history, vrs_s=vrs_s)
     # ckp_values is a list, same shape as vrs_s.
@@ -194,6 +198,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=vrs_s_de
         # # use new checkpoint time_string, cause history can be inhere
         # #
         ti_value_all = int_hst + int_v_left + int_ckp
+        # ti_value_all is like [[time_int_hst, value_hst], [], ]
         v_sum = float(0)
         def po(n):
             return (abs(n) + n) / float(2)
@@ -605,6 +610,9 @@ def key_get_out(ks, n=3):
 
 
 def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=ckps_default, interval=900, vrs_s=vrs_s_default, rsrv=rsrv_default, his_d={}, sql_meta_info={}, print_redis_rcds=False):
+    """
+
+    """
     # TODO: pttl unit is hour.
     if not sql_meta_info:
         return {}
@@ -650,7 +658,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
             tasks = [[cid, mid, t, False] for mid in mids for t in ckps]
         return tasks
 
-    def rd_acc(lst):
+    def get_redis_keys_and_meta_info(lst):
         return rd(*lst)
 
     def rd(cid, mid, t, left_null):
@@ -669,7 +677,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
         ss[-1] = str(new_t)
         return '/'.join(ss)
 
-    def vrs_parse(sect): # use vrs_s outer_side info
+    def vrs_interval_sumup(sect): # use vrs_s outer_side info
         [[key_0, key_1], [v_left, v_near, ts_ckp, v_right]] = sect
         # TODO: try
         # print(key_0, key_1)
@@ -725,13 +733,15 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company', ckps=c
     # print(len(mk_redis_tasks(mids, ckps)))
     # tp = gpol(n)
     # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
-    # redis_rcds = tp.map(rd_acc, mk_redis_tasks())
-    redis_rcds = map(rd_acc, mk_redis_tasks())
+    # redis_rcds = tp.map(get_redis_keys_and_meta_info, mk_redis_tasks())
+    redis_rcds = map(get_redis_keys_and_meta_info, mk_redis_tasks())
+    # # get_near_keys and add meta info, it is like [meta_info, rlt_4]
     if print_redis_rcds:
         print(redis_rcds)
     # t_b = time.time()
-    # TODO: pipe the data process, which will save RAM.
-    vrs_extr = [i for i in map(vrs_parse, redis_rcds) if i]
+    # # pipe the data process, which will save RAM.
+    vrs_extr = [i for i in map(vrs_interval_sumup, redis_rcds) if i]
+    # # use incr_sumup method to get the vrs-incr dict.
     fee_lst = map(fee_reduce_mid, vrs_extr)
     # print('cpu time %s' % (time.time() - t_b))
     print('spend time %s' % (time.time() - t_s))
