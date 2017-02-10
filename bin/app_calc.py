@@ -166,7 +166,7 @@ def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=90
     # """ha is like {'mid':35545, 'time_ckp': 0, value':112}"""
     # t_start = time.time()
     v_left, v_near, ts_ckp, v_right = get_near_keys(mid, time_ckp, interval=interval, rsrv=rsrv, left_null=left_null)
-    # #
+    # # v_left is dict of second, and full info string as value.
     # print(mid, time_ckp, time.time() - t_start)
     ckp_values = kwh_interval(v_near, history=history, vrs_s=vrs_s)
     # ckp_values is a list, same shape as vrs_s.
@@ -175,7 +175,7 @@ def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=90
 
 
 def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=vrs_s_default):
-    """history is """
+    """history is last round checkpoint value, it is in same shape of vrs_s"""
     if not history or not v_left or not ckp_values:
         return None
     def vr_parse2(sss, vr):
@@ -384,9 +384,113 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     return [left_values, res_d, ts_ckp, right_values]
 
 
+def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=900, vrs_s=vrs_s_default):
+    """
+    redis keys has changed, not it is like {15min_ts: {min_second_var:value, ...}},
+    this v2 function is basic same as origin, but the return value is not like{time_string: all_vrs_long_string, ...},
+    it will be like {vrs_1:{ts_int_1: value, ...}, ...}, this will be easy for kwh_interval to parse.
+    other three value is same. Third value is used in one place as meta info now.
+    first, for one vrs, get all keys name in redis,
+    then get all value/near ckp value, using redis pipline.
+    last, make dict, vrs is key, time_int as sub key, variable value as dict value.
+    ..1
+    """
+    r = redis_cursors_d[rsrv]
+    p = r.pipeline(transaction=True)
+    def ts_ckp_int(i, min_sec = True):
+        if min_sec:
+            s = time.strftime('%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
+        else:
+            s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
+        return s
+
+    def time_lst(ckp_shift, left=True, one_key=True):
+        """not used now"""
+        rst = []
+        if left:
+            ts_k1 = ts_ckp_int(-interval-ckp_shift)[:-2]
+            if one_key:
+                return [[ts_k1, None]]
+            for i in range(interval):
+                ts_k2 = ts_ckp_int(- i - ckp_shift)
+                rst.append([ts_k1, ts_k2])
+            return rst
+        else:
+            ts_k1 = ts_ckp_int(-ckp_shift)[:-2]
+            if one_key:
+                return [[ts_k1, None]]
+            for i in range(interval):
+                ts_k2 = ts_ckp_int(i - ckp_shift)
+                rst.append([ts_k1, ts_k2])
+            return rst
+    keys_left = time_lst(ckp_shift)
+    keys_right = time_lst(ckp_shift, left=False)
+    lk1, lk2 = keys_left[0]
+    rk1, rk2 = keys_right[0]
+    if not left_null:
+        p.hgetall('meterdata_%s_%s' % (mid, lk1))
+    else:
+        left_values = None
+        p.hkeys('meterdata_%s_%s' % (mid, lk1))
+    if not right_null:
+        p.hgetall('meterdata_%s_%s' % (mid, lk1))
+    else:
+        right_values = None
+        p.hkeys('meterdata_%s_%s' % (mid, rk1))
+
+    [l_dok, r_dok] = p.execute()
+    if not left_null:
+        left_values = l_dok
+        try:
+            left_key = sorted(left_values.keys(), reverse=True)[0:min(len(left_values.keys()), near)] if left_values else None
+        except:
+            import sys, os
+            print(str(sys.exc_info()))
+        left_value = [left_values[i] for i in left_key] if left_key else None
+    else:
+        left_keys_raw = l_dok
+        left_keys = sorted(left_keys_raw, reverse=True)
+        left_key = left_keys[0:min(len(left_keys), near)] if left_keys else None
+        if left_key:
+            for i in left_key:
+                p.hget('meterdata_%s_%s' % (mid, lk1), i)
+            left_value = p.execute()
+        else:
+            left_value = None
+    if not right_null:
+        right_values = r_dok
+        n = min(len(right_values.keys(), near))
+        right_key = sorted(right_values.keys())[0:n] if right_values else None
+        right_value = [right_values[i] for i in right_key] if right_key else None
+    else:
+        right_keys_raw = r_dok
+        right_keys = sorted(right_keys_raw)
+        right_key = right_keys[0:min(len(right_keys), near)] if right_keys else None
+        if right_key:
+            for i in right_key:
+                p.hget('meterdata_%s_%s' % (mid, rk1), i)
+            right_value = p.execute()
+        else:
+            right_value = None
+    if right_null:
+        right_values = None
+    else:
+        right_values = r.hgetall('meterdata_%s_%s' % (mid, rk1))
+    res_d = {'left':{}, 'right':{}}
+    if left_key:
+        for i, j  in zip(left_key, left_value):
+            res_d['left'][i] = j
+    if right_key:
+        for i, j in zip(right_key, right_value):
+            res_d['right'][i] = j
+    ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
+    return [left_values, res_d, ts_ckp, right_values]
+
+
 def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     """d is like {'left':{'20170106_121445':'kwhttli=12,kwhttle=1,pttli=2,pttle=3'},
     'right':{'20170106_121509':'kwhttli=18,kwhttle=1.3,pttli=4,pttle=3.2'}}
+    TODO: should the return value be dict, to show the vrs info or not?
     """
     vrs = [i[0] for i in vrs_s]
     # vrs_s is like [['pttl', 1], ['kwhttl', 2]]
@@ -690,7 +794,6 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
 
     def vrs_interval_sumup(sect): # use vrs_s outer_side info
         [[key_0, key_1], [v_left, v_near, ts_ckp, v_right]] = sect
-        # TODO: try
         # print(key_0, key_1)
         if not key_0 in his_d:
             ckp_values = kwh_interval(v_near, history=[], vrs_s=vrs_s)
@@ -746,7 +849,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
     # redis_rcds = tp.map(t_acc, [[mid, i] for mid in mids for i in ckps])
     # redis_rcds = tp.map(get_redis_keys_and_meta_info, mk_redis_tasks())
     redis_rcds = map(get_redis_keys_and_meta_info, mk_redis_tasks())
-    # # get_near_keys and add meta info, it is like [meta_info, rlt_4]
+    # # get keys and add meta info, it is like [meta_info, rlt_4]
     if print_redis_rcds:
         print(redis_rcds)
     # t_b = time.time()
@@ -926,4 +1029,6 @@ if __name__ == '__main__':
         try:
             main()
         except:
+            import sys, os
+            print(str(sys.exc_info()))
             time.sleep(60)
