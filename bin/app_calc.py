@@ -90,7 +90,17 @@ ckps_default = default_d['ckps']
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='company', workers_d=mysql_workers_d):
     worker = workers_d[app]
     if option == 'price':
-        sql = 'select hours, price_p, price_f, price_v  from price_policy  where %s_id=%s' % (comp, cid)
+        if comp == 'company':
+            sql = 'select hours, price_p, price_f, price_v  from price_policy  where %s_id=%s' % (comp, cid)
+        else:
+            sql_get_real_cid = 'select company_id from %s where id = %s' % (comp, cid)
+            tmp = worker(sql_get_real_cid)
+            real_cid  = tmp[0] if tmp else ''
+            print(real_cid) # here, how to unpack first value ?
+            if real_cid:
+                sql = 'select hours, price_p, price_f, price_v  from price_policy  where company_id=%s' % (real_cid)
+            else:
+                return {}
         rst = worker(sql)
         tmp_d = {}
         if rst:
@@ -615,7 +625,6 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
     """
 
     """
-    # TODO: pttl unit is hour.
     if not sql_meta_info:
         return {}
     def mk_his_key(mid, t, ckp_ts, no_mid=False):
@@ -748,8 +757,8 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
     # print('cpu time %s' % (time.time() - t_b))
     print('spend time %s' % (time.time() - t_s))
     # return vrs_extr
-    # return [redis_rcds, vrs_extr, fee_lst, fee_d_default]
-    print( len(redis_rcds), len(vrs_extr), len(fee_lst))
+    # print(redis_rcds, vrs_extr, fee_lst, fee_d_default)
+    print(len(redis_rcds), len(vrs_extr), len(fee_lst))
     # return [fee_lst, fee_d_default]
     return fee_d_default
 
@@ -757,14 +766,15 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
 def sql_op(info_dict, workers_d=mysql_workers_d):
     """
     info_and_dict is like:
-    {'mysql:app_eemsop/company/38/20170118_064500': {'_times': '2017-01-18 06:30:00',
-    'charge': 62.03528756860898,
-    'kvarhi': -17.749406617955692,
-    'kwhe': 0.0,
-    'kwhi': 166.26986751168315,
-    'p': 2660.3178801869303,
-    'q': 477.80727717022285,
-    'spfv': 'v'},
+    {'mysql:app_eemsop/company/38/20170118_064500':
+      {'_times': '2017-01-18 06:30:00',
+      'charge': 62.03528756860898,
+      'kvarhi': -17.749406617955692,
+      'kwhe': 0.0,
+      'kwhi': 166.26986751168315,
+      'p': 2660.3178801869303,
+      'q': 477.80727717022285,
+      'spfv': 'v'},
     ...
     }
 
@@ -781,7 +791,7 @@ def sql_op(info_dict, workers_d=mysql_workers_d):
         worker = workers_d[app_complex]
         # stat_time = sd['_times']
         ### NOTICE: write kwh as well as kwhi
-        sql = "insert into elec_%s_15min_%s (stat_time,company_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv, kwh) values \
+        sql = "insert into elec_%s_15min_%s (stat_time,company_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv,kwh) values \
         ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s','%s') on duplicate key update \
         charge='%s', kwhi='%s', kwhe='%s', kvarhi='%s', kvarhe='%s', p='%s', q='%s', spfv='%s', kwh='%s'" % \
         (comp,time.strftime('%Y',time.localtime()),sd['_times'],int(cid),sd['charge'],sd['kwhi'],sd['kwhe'],
@@ -867,20 +877,20 @@ comp_info_d_one = {'meter_ids': [34758, 2159, 2166, 2024, 2016, 2019, 2125, 2000
                              'v': 0.3167}}
 
 pli_one = {'ctnum': '2',
-             'ctr': '10.0',
-             'dev_mac': '120000af6b3a',
-             'dev_model': 'pb600',
-             'gmid': '35545',
-             'kva': '800.0',
-             'meter_sn': '',
-             'ptr': '100.0',
-             'r_ia': '10.0',
-             'r_kwhttli': '1000.0',
-             'r_pa': '1000.0',
-             'r_ua': '100.0',
-             'tc': '800.0',
-             'use_energy': '0',
-             'use_power': '0'}
+           'ctr': '10.0',
+           'dev_mac': '120000af6b3a',
+           'dev_model': 'pb600',
+           'gmid': '35545',
+           'kva': '800.0',
+           'meter_sn': '',
+           'ptr': '100.0',
+           'r_ia': '10.0',
+           'r_kwhttli': '1000.0',
+           'r_pa': '1000.0',
+           'r_ua': '100.0',
+           'tc': '800.0',
+           'use_energy': '0',
+           'use_power': '0'}
 
 fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000':
              {'_times': '2017-01-18 08:45:00',
