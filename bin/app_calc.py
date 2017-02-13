@@ -490,7 +490,7 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
     return [left_values, res_d, ts_ckp, right_values]
 
 
-def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
+def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900, print_val=False):
     """d is like {'left':{'20170106_121445':'kwhttli=12,kwhttle=1,pttli=2,pttle=3'},
     'right':{'20170106_121509':'kwhttli=18,kwhttle=1.3,pttli=4,pttle=3.2'}}
     TODO: should the return value be dict, to show the vrs info or not?
@@ -513,7 +513,7 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
             # print(x1, y1, x2, y2)
             # print('variable none.')
             return [x0, None]
-        if float(x2 - x1) == 0:
+        if float(x2 - x1) == 0.0:
             rt = [x1, float(y1 + y2)/2]
         else:
             rt = [x0, y1  + (y2 - y1) * (x0 - x1) / float(x2 - x1)]
@@ -548,6 +548,8 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
             # # old code
             # vrs_num_acc = [[time_int, vr_parse(lst, i)] for i in vrs]
             # vrs_all.append(vrs_num_acc)
+        if print_val:
+            print(i, k, vrs_value)
     for i in vrs:
         have_value = False
         for k in ks_right:
@@ -559,11 +561,14 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
             vrs_value = vr_parse(lst, i)
             if vrs_value is not None:
                 vrs_2.append([time_int, vrs_value])
+                have_value = True
                 break
             else:
                 continue
         if not have_value:
             vrs_2.append(None)
+        if print_val:
+            print(i, k, vrs_value)
     # vrs_all is like [[[1221212, 3.2], [12323213, 4.1],...], [[], [], ...]]
     # vrs_left is like [[1221212, 3.2], [12323213, 4.1],...], [], [], ...]
     # if len(vrs_all) == 1:
@@ -574,6 +579,8 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900):
     # print(vrs)
     # print(vrs_1, vrs_2)
     rst = []
+    if print_val:
+        print('vrs_1', vrs_1, 'vrs_2', vrs_2)
     for a, b in zip(vrs_1, vrs_2):
         if (a is None and b is None):
             rst.append(['00000000_000000', None])
