@@ -1017,7 +1017,7 @@ fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000':
 def main(app_lst=app_lst_default, shift=180):
     # TODO: sys argment parse, app_lst, and shift
     sql_meta_info_default = sql_get_all_info(app_lst)
-    sql_meta_info_workshops = sql_get_all_info(app_lst, comp='workshops')
+    sql_meta_info_workshops = sql_get_all_info(app_lst, comp='workshop')
     his_d_default = {}
     cunter = 0
     # TODO: command parameter.
