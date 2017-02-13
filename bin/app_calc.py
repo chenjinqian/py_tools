@@ -894,8 +894,8 @@ def sql_op(info_dict, workers_d=mysql_workers_d):
         worker = workers_d[app_complex]
         # stat_time = sd['_times']
         ### NOTICE: write kwh as well as kwhi
-        sql = "insert into elec_%s_15min_%s (stat_time,company_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv,kwh) values
-        ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s','%s') on duplicate key update
+        sql = "insert into elec_%s_15min_%s (stat_time,company_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv,kwh) values \
+        ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s','%s') on duplicate key update \
         charge='%s', kwhi='%s', kwhe='%s', kvarhi='%s', kvarhe='%s', p='%s', q='%s', spfv='%s', kwh='%s'" % \
         (comp,time.strftime('%Y',time.localtime()),sd['_times'],int(cid),sd['charge'],sd['kwhi'],sd['kwhe'],
          sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'],
@@ -1024,7 +1024,7 @@ def main(app_lst=app_lst_default, shift=180):
         how_about_sleep(shift)
 
 
-if __name__ == '__main__':
+def main_daemon():
     while True:
         try:
             main()
@@ -1032,3 +1032,7 @@ if __name__ == '__main__':
             import sys, os
             print(str(sys.exc_info()))
             time.sleep(60)
+
+
+if __name__ == '__main__':
+    main_daemon()
