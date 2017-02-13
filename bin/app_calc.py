@@ -171,6 +171,7 @@ def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=90
     ckp_values = kwh_interval(v_near, history=history, vrs_s=vrs_s)
     # ckp_values is a list, same shape as vrs_s.
     incr = incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
+    # # incr is a dict with '_times' key.
     return [incr, ckp_values]
 
 
@@ -384,7 +385,8 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     return [left_values, res_d, ts_ckp, right_values]
 
 
-def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=900, vrs_s=vrs_s_default):
+def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
+                     left_null=False, right_null=True, near=900, vrs_s=vrs_s_default):
     """
     redis keys has changed, not it is like {15min_ts: {min_second_var:value, ...}},
     this v2 function is basic same as origin, but the return value is not like{time_string: all_vrs_long_string, ...},
@@ -401,7 +403,7 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_nu
         if min_sec:
             s = time.strftime('%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
         else:
-            s =  time.strftime('%Y%m%d_%H%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
+            s = time.strftime('%Y%m%d_%H%M%S',time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
         return s
 
     def time_lst(ckp_shift, left=True, one_key=True):
@@ -442,7 +444,8 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_nu
     if not left_null:
         left_values = l_dok
         try:
-            left_key = sorted(left_values.keys(), reverse=True)[0:min(len(left_values.keys()), near)] if left_values else None
+            left_key = sorted(left_values.keys(), reverse=True)[0:min(len(left_values.keys()), near)] \
+                       if left_values else None
         except:
             import sys, os
             print(str(sys.exc_info()))
@@ -623,15 +626,17 @@ def get_all_fee_policy(rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old
     return get_mids_fee_policy(mids, rsrv=rsrv, lk1=lk1,raw=raw, old=old)
 
 
-def sql_get_all_info(app_lst=app_lst_default, comp='company'):
+def sql_get_all_info(app_lst=app_lst_default, comp='company', patch=True):
     # all comp types.
     mids_pli_d = get_all_fee_policy()
     company_id_d = {} # {'mysql:app_eemscr':[],}
     rst_d = {}
+    # # patch for sql table workshop and workshops difference.
+    comp_for_sql = 'workshops' if (patch and comp=='workshop') else comp
     for app in app_lst:
         import os, sys
         try:
-            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app, comp=comp)
+            cid_list = sql_get_mids_cids_or_price(0, option = 'company_id', app=app, comp=comp_for_sql)
             print(cid_list)
             # workshop_list = sql_get_mids_cids_or_price(0, option = 'workshop_id', app=app)
             # equipment_list = sql_get_mids_cids_or_price(0, option = 'equipment_id', app=app)
@@ -645,7 +650,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
     for ap_comp in rst_d.keys():
         for cid in rst_d[ap_comp].keys():
             rst_d[ap_comp][cid] = {}
-            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app, comp=comp)
+            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app, comp=comp_for_sql)
             rst_d[ap_comp][cid]['meter_id'] = {}
             for mid in meter_id_lst:
                 if str(mid) in mids_pli_d:
@@ -654,7 +659,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company'):
                     rst_d[ap_comp][cid]['meter_id'][str(mid)] = {}
     for ap_comp in rst_d.keys():
         for cid in rst_d[ap_comp].keys():
-            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app, comp=comp)
+            rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app, comp=comp_for_sql)
     return rst_d
 
 
@@ -894,10 +899,10 @@ def sql_op(info_dict, workers_d=mysql_workers_d):
         worker = workers_d[app_complex]
         # stat_time = sd['_times']
         ### NOTICE: write kwh as well as kwhi
-        sql = "insert into elec_%s_15min_%s (stat_time,company_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv,kwh) values \
+        sql = "insert into elec_%s_15min_%s (stat_time,%s_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv,kwh) values \
         ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s','%s') on duplicate key update \
         charge='%s', kwhi='%s', kwhe='%s', kvarhi='%s', kvarhe='%s', p='%s', q='%s', spfv='%s', kwh='%s'" % \
-        (comp,time.strftime('%Y',time.localtime()),sd['_times'],int(cid),sd['charge'],sd['kwhi'],sd['kwhe'],
+        (comp,time.strftime('%Y',time.localtime()),comp,sd['_times'],int(cid),sd['charge'],sd['kwhi'],sd['kwhe'],
          sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'],
          sd['kwhi'],
          sd['charge'],sd['kwhi'],sd['kwhe'],sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'],
@@ -924,11 +929,11 @@ def snip_shot(meta_d={}, his_d={}, no_sql_op = False):
             for cid in cids:
                 # print(cid)
                 # yield [int(cid), app]
-                yield (int(cid), app)
+                yield (int(cid), app, comp)
     # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
     # cp9 = gpol(9)
     # rst_snp = cp9.map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
-    rst_snp = map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
+    rst_snp = map(lambda lst: one_comp(lst[0], app=lst[1], comp=lst[2], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
     if not no_sql_op:
         sql_ops = map(sql_op, (d for d in rst_snp))
     # no exception here.
@@ -1012,12 +1017,14 @@ fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000':
 def main(app_lst=app_lst_default, shift=180):
     # TODO: sys argment parse, app_lst, and shift
     sql_meta_info_default = sql_get_all_info(app_lst)
+    sql_meta_info_workshops = sql_get_all_info(app_lst, comp='workshops')
     his_d_default = {}
     cunter = 0
     # TODO: command parameter.
     while True:
         cunter += 1
         s1 = snip_shot(sql_meta_info_default, his_d_default)
+        s2 = snip_shot(sql_meta_info_workshops, his_d_default)
         if cunter > 5:
             cunter = 0
             sql_meta_info_default = sql_get_all_info(app_lst_default)
