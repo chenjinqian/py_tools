@@ -111,6 +111,7 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='com
         return tmp_d
     elif option == 'company_id':
         sql = 'select id from %s;' % comp
+        # # fix bug about workshop query.
         try:
             rst = worker(sql)
         except:
