@@ -110,7 +110,7 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='com
             tmp_d['v'] = float(rst[0][3])
         return tmp_d
     elif option == 'company_id':
-        sql = 'select id from company;'
+        sql = 'select id from %s;' % comp
         try:
             rst = worker(sql)
         except:
@@ -173,91 +173,6 @@ def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=90
     incr = incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=v_right, vrs_s=vrs_s)
     # # incr is a dict with '_times' key.
     return [incr, ckp_values]
-
-
-def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=vrs_s_default):
-    """history is last round checkpoint value, it is in same shape of vrs_s"""
-    if not history or not v_left or not ckp_values:
-        return None
-    def vr_parse2(sss, vr):
-        """sss is like 'var1=2,var3=2', ss is like ['var1=num1', 'var2=num2']"""
-        ss = sss.split(',')
-        try:
-            numbers = [float(i.split('=')[1]) for i in ss if str(vr)+'=' in i]
-            num = None if not numbers else numbers[0]
-            return num
-        except:
-            return None
-    def int_f_k(k):
-        return int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
-
-    def sumup(hst, v_left, ckp, v_right, vr, s='p', factor=3600):
-        """s = p/n/a, for positive, negative, as is."""
-        if not v_left or not type(v_left)==dict:
-            return None
-        try:
-            hst_one = float(hst[1])
-            ckp_one = float(ckp[1])
-        except:
-            return None
-        left_keys = sorted(v_left.keys())
-        # right_keys = sorted(v_right.keys())
-        # int_v_right = [[int_f_k(k), float(v_right[k])] for k in right_keys]
-        int_v_left = [[int_f_k(k), vr_parse2(v_left[k], vr)] for k in left_keys if vr_parse2(v_left[k], vr)]
-        int_hst = [[int_f_k(ts_ckp[0]), hst_one]]
-        int_ckp = [[int_f_k(ts_ckp[1]), ckp_one]]
-        # # use new checkpoint time_string, cause history can be inhere
-        # #
-        ti_value_all = int_hst + int_v_left + int_ckp
-        # ti_value_all is like [[time_int_hst, value_hst], [], ]
-        v_sum = float(0)
-        def po(n):
-            return (abs(n) + n) / float(2)
-        def ne(n):
-            return (n - abs(n)) / float(2)
-        for i in zip(ti_value_all[:-1], ti_value_all[1:]):
-            [x1, y1], [x2, y2] = i
-            if  s=='n':
-                acc = 0.0 if (y1 is None or y2 is None) else ne(y1 + y2)*(x2 - x1) / float(2)
-            elif s == 'p':
-                acc = 0.0 if (y1 is None or y2 is None) else po(y1 + y2)*(x2 - x1) / float(2)
-            else:
-                acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
-            # print(acc, x1, y1, x2, y2)
-            v_sum += acc
-        # print(v_sum, v_sum/float(factor))
-        return v_sum/float(factor)  # factor for four hours.
-
-    def pstv(y1, y2):
-        try:
-            y1f = float(y1)
-            y2f = float(y2)
-        except:
-            # print('y1, y2 str, vrs is %s' % (vr))
-            return None
-        return ((y2f - y1f) + abs(y2f - y1f))/ float(2.0)
-
-    incr = {}
-    for hst, ckp, vr in zip(history, ckp_values, vrs_s):
-        incr['_times'] = ts_ckp[0]
-        if not (hst and ckp):
-            incr[vr[0]] = None
-            continue
-        if vr[1] == 0:
-            # incr.append([vr,ts_ckp[0], pstv(ckp[1], hst[1])])
-            ### bug 1, 0, fixed
-            incr[vr[0]] = pstv(hst[1], ckp[1])
-            # Notice: use leftside of the time section.
-        elif vr[1] == 1:
-            incr[vr[0]] = sumup(hst, v_left, ckp, v_right, vr[0], 'a')
-            # incr.append([vr, ts_ckp[0], sumup(hst, v_left, ckp, v_right, vr[0], 'a')])
-        elif vr[1] == 2:
-            incr[vr[0]] = [sumup(hst, v_left, ckp, v_right, vr[0], 'p'), sumup(hst, v_left, ckp, v_right, vr[0], 'n')]
-            # incr.append([vr, ts_ckp[0], [sumup(hst, v_left, ckp, v_right, vr[0], 'p'), sumup(hst, v_left, ckp, v_right, vr[0], 'n')]])
-        else:
-            print('type interger not recongnized, should be 0 or 1, get %s' % vr[1])
-            # incr.append(None)
-    return incr
 
 
 def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=900):
@@ -593,6 +508,91 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900, print_val=Fal
         x0, y0 = iv(a + b)
         rst.append([time.strftime('%Y%m%d_%H%M%S', time.localtime(x0)), y0])
     return rst
+
+
+def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=vrs_s_default):
+    """history is last round checkpoint value, it is in same shape of vrs_s"""
+    if not history or not v_left or not ckp_values:
+        return None
+    def vr_parse2(sss, vr):
+        """sss is like 'var1=2,var3=2', ss is like ['var1=num1', 'var2=num2']"""
+        ss = sss.split(',')
+        try:
+            numbers = [float(i.split('=')[1]) for i in ss if str(vr)+'=' in i]
+            num = None if not numbers else numbers[0]
+            return num
+        except:
+            return None
+    def int_f_k(k):
+        return int(time.mktime(time.strptime(k, '%Y%m%d_%H%M%S')))
+
+    def sumup(hst, v_left, ckp, v_right, vr, s='p', factor=3600):
+        """s = p/n/a, for positive, negative, as is."""
+        if not v_left or not type(v_left)==dict:
+            return None
+        try:
+            hst_one = float(hst[1])
+            ckp_one = float(ckp[1])
+        except:
+            return None
+        left_keys = sorted(v_left.keys())
+        # right_keys = sorted(v_right.keys())
+        # int_v_right = [[int_f_k(k), float(v_right[k])] for k in right_keys]
+        int_v_left = [[int_f_k(k), vr_parse2(v_left[k], vr)] for k in left_keys if vr_parse2(v_left[k], vr)]
+        int_hst = [[int_f_k(ts_ckp[0]), hst_one]]
+        int_ckp = [[int_f_k(ts_ckp[1]), ckp_one]]
+        # # use new checkpoint time_string, cause history can be inhere
+        # #
+        ti_value_all = int_hst + int_v_left + int_ckp
+        # ti_value_all is like [[time_int_hst, value_hst], [], ]
+        v_sum = float(0)
+        def po(n):
+            return (abs(n) + n) / float(2)
+        def ne(n):
+            return (n - abs(n)) / float(2)
+        for i in zip(ti_value_all[:-1], ti_value_all[1:]):
+            [x1, y1], [x2, y2] = i
+            if  s=='n':
+                acc = 0.0 if (y1 is None or y2 is None) else ne(y1 + y2)*(x2 - x1) / float(2)
+            elif s == 'p':
+                acc = 0.0 if (y1 is None or y2 is None) else po(y1 + y2)*(x2 - x1) / float(2)
+            else:
+                acc = 0.0 if (y1 is None or y2 is None) else (y1 + y2)*(x2 - x1) / float(2)
+            # print(acc, x1, y1, x2, y2)
+            v_sum += acc
+        # print(v_sum, v_sum/float(factor))
+        return v_sum/float(factor)  # factor for four hours.
+
+    def pstv(y1, y2):
+        try:
+            y1f = float(y1)
+            y2f = float(y2)
+        except:
+            # print('y1, y2 str, vrs is %s' % (vr))
+            return None
+        return ((y2f - y1f) + abs(y2f - y1f))/ float(2.0)
+
+    incr = {}
+    for hst, ckp, vr in zip(history, ckp_values, vrs_s):
+        incr['_times'] = ts_ckp[0]
+        if not (hst and ckp):
+            incr[vr[0]] = None
+            continue
+        if vr[1] == 0:
+            # incr.append([vr,ts_ckp[0], pstv(ckp[1], hst[1])])
+            ### bug 1, 0, fixed
+            incr[vr[0]] = pstv(hst[1], ckp[1])
+            # Notice: use leftside of the time section.
+        elif vr[1] == 1:
+            incr[vr[0]] = sumup(hst, v_left, ckp, v_right, vr[0], 'a')
+            # incr.append([vr, ts_ckp[0], sumup(hst, v_left, ckp, v_right, vr[0], 'a')])
+        elif vr[1] == 2:
+            incr[vr[0]] = [sumup(hst, v_left, ckp, v_right, vr[0], 'p'), sumup(hst, v_left, ckp, v_right, vr[0], 'n')]
+            # incr.append([vr, ts_ckp[0], [sumup(hst, v_left, ckp, v_right, vr[0], 'p'), sumup(hst, v_left, ckp, v_right, vr[0], 'n')]])
+        else:
+            print('type interger not recongnized, should be 0 or 1, get %s' % vr[1])
+            # incr.append(None)
+    return incr
 
 
 def get_mids_fee_policy(mids, rsrv=rsrv_default, lk1 = 'sync_meterinfo', raw=False, old={}):
@@ -1035,6 +1035,7 @@ def main(app_lst=app_lst_default, shift=180):
         if cunter > 5:
             cunter = 0
             sql_meta_info_default = sql_get_all_info(app_lst_default)
+            sql_meta_info_workshops = sql_get_all_info(app_lst, comp='workshop')
         how_about_sleep(shift)
 
 
