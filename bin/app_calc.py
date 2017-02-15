@@ -16,6 +16,8 @@
 #       some exception info.
 #       two connections, one have commit sth, another will not notice. weird.
 # TODO: use global dict for default setting.
+# TODO: p should have no history inhere property, kwh only. or, p sumup with speical operation.
+# TODO: history inherent is not good enough in atomic.
 
 """
 doc
@@ -80,11 +82,13 @@ default_d['rsrv'] = 'redis:meter'
 default_d['app_lst'] = ['mysql:app_eemsop']
 default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
 default_d['ckps'] = [0, 60*30, 60*60*3]
+default_d['ckps_four_hour'] = [0, 60*30*2, 60*30*3, 60*30*4, 60*30*5, 60*30*6]
 # Notice: this should not overlap nore be neared, if the first round init problem is not solved.
 rsrv_default = default_d['rsrv']
 app_lst_default = default_d['app_lst']
 vrs_s_default = default_d['vrs_s']
 ckps_default = default_d['ckps']
+ckps_four_hour = default_d['ckps']
 
 
 def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='company', workers_d=mysql_workers_d):
@@ -307,6 +311,7 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
     redis keys has changed, not it is like {15min_ts: {min_second_var:value, ...}},
     this v2 function is basic same as origin, but the return value is not like{time_string: all_vrs_long_string, ...},
     it will be like {vrs_1:{ts_int_1: value, ...}, ...}, this will be easy for kwh_interval to parse.
+    but, since we already have one working kwh_interval, why not just return same value as v1 does?
     other three value is same. Third value is used in one place as meta info now.
     first, for one vrs, get all keys name in redis,
     then get all value/near ckp value, using redis pipline.
@@ -540,6 +545,9 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=vrs_s_de
         # right_keys = sorted(v_right.keys())
         # int_v_right = [[int_f_k(k), float(v_right[k])] for k in right_keys]
         int_v_left = [[int_f_k(k), vr_parse2(v_left[k], vr)] for k in left_keys if vr_parse2(v_left[k], vr)]
+        int_v_left = [[int_f_k(ts_ckp[0]), None]] if not left_keys else int_v_left
+        # # p should not sumup if the value is inhered from history only, in this case, this line will make
+        # # the sumup value zero.
         int_hst = [[int_f_k(ts_ckp[0]), hst_one]]
         int_ckp = [[int_f_k(ts_ckp[1]), ckp_one]]
         # # use new checkpoint time_string, cause history can be inhere
