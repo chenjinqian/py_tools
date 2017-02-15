@@ -725,7 +725,7 @@ def apply_pli(vr_d, price_d, pli_d, interval=900):
         tmp_d['q'] = vr_d['kvarhttli'] * trans_factor
     else:
         tmp_d['_use_power'] = pli_d['use_power']
-        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else N_compone
+        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
         tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * 4) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
         # TODO: confirm p add up method.
         # Notice: 60 * 60 / interval
