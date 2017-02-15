@@ -51,12 +51,12 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
 
 
 # use dictory for global database connection pool instance.
-cfgd = cfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
 mysql_worker_d = mk_mp_d()
 redis_cursor_d = mk_rp_d()
 
 
-# sydw('select stat_time, company_id, kwh from elec_company_15min_2016 order by stat_time DESC, company_id limit 50;')
+# sydw('select stat_time, cid, kwh from elec_company_15min_2016 order by stat_time DESC, cid limit 50;')
 # mdt_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:meterdataxbxb'])
 
 
@@ -77,44 +77,44 @@ def fm_tm(style=0, fm = '', tm=''):
     return time.strftime(fm, tm)
 
 
-def mksql_last_15_min(comp='2', point=3, table='', time_end='', simple_lst=True, new=True):
+def mksql_last_15_min(cid='2', point=3, time_end='', simple_lst=True, new=True):
     table = '' or 'elec_company_15min_%s' % time.strftime('%Y', time.localtime())
-    example_sql = 'select * from (select * from elec_company_15min_2016 where company_id = 2  and stat_time < "2016-12-23 17:45:00" order by stat_time desc, stat_time limit 9600) t order by stat_time;'
+    example_sql = 'select * from (select * from elec_company_15min_2016 where cid = 2  and stat_time < "2016-12-23 17:45:00" order by stat_time desc, stat_time limit 9600) t order by stat_time;'
     time_end = time_end or fm_tm()
-    sql = 'select * from (select * from %s where company_id = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, comp, time_end, point)
+    sql = 'select * from (select * from %s where cid = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, cid, time_end, point)
     if simple_lst:
-        sql = 'select stat_time, kwh from (select * from %s where company_id = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, comp, time_end, point)
+        sql = 'select stat_time, kwh from (select * from %s where cid = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, cid, time_end, point)
         if new:
-            sql = 'select stat_time, kwhi from (select * from %s where company_id = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, comp, time_end, point)
+            sql = 'select stat_time, kwhi from (select * from %s where cid = %s  and stat_time < "%s" order by stat_time desc, stat_time limit %s) t order by stat_time;' % (table, cid, time_end, point)
     return sql
 
 
-def mksql_today_sum(comp='2', table='', time_start='', time_end=''):
+def mksql_today_sum(cid='2', time_start='', time_end=''):
     import time
     table = '' or 'elec_company_15min_%s' % time.strftime('%Y', time.localtime())
     time_start = '' or fm_tm(fm = '%Y-%m-%d 00:00:00')
     time_end = ''  or  fm_tm()
     sql = 'select max(stat_time), sum(kwh) from \
-    (select * from elec_company_15min_%s where company_id = %s  and stat_time > "%s" \
+    (select * from elec_company_15min_%s where cid = %s  and stat_time > "%s" \
     and stat_time < "%s" order by stat_time ) t order by stat_time;' \
-    % (time.strftime('%Y', time.localtime()), comp, time_start, time_end)
+    % (time.strftime('%Y', time.localtime()), cid, time_start, time_end)
     return sql
 
 
-def get_15m_last_n(comp, point=3, table='', app='mysql:app_eemsop', new=True):
+def get_15m_last_n(cid, point=3, app='mysql:app_eemsop', new=True):
     worker = mysql_worker_d[app]
-    # sql_example = 'select * from elec_company_15min_2016 where company_id = 12 order by stat_time desc limit 5;'
-    # sql = 'select * from %s where company_id=%s order by %s desc limit %s;' % (table_name, company_id, order_by, n)
-    sql = mksql_last_15_min(comp, point, table, new=new)
+    # sql_example = 'select * from elec_company_15min_2016 where cid = 12 order by stat_time desc limit 5;'
+    # sql = 'select * from %s where cid=%s order by %s desc limit %s;' % (table_name, cid, order_by, n)
+    sql = mksql_last_15_min(cid, point, new=new)
     res = worker(sql)
     return res
 
 
-def get_sum_today(comp, table='', app='mysql:app_eemsop', time_start='', time_end=''):
+def get_sum_today(cid, app='mysql:app_eemsop', time_start='', time_end=''):
     worker = mysql_worker_d[app]
-    # sql_example = 'select * from elec_company_15min_2016 where company_id = 12 order by stat_time desc limit 5;'
-    # sql = 'select * from %s where company_id=%s order by %s desc limit %s;' % (table_name, company_id, order_by, n)
-    sql = mksql_today_sum(comp, table, time_start=time_start, time_end=time_end)
+    # sql_example = 'select * from elec_company_15min_2016 where cid = 12 order by stat_time desc limit 5;'
+    # sql = 'select * from %s where cid=%s order by %s desc limit %s;' % (table_name, cid, order_by, n)
+    sql = mksql_today_sum(cid, time_start=time_start, time_end=time_end)
     res = worker(sql)
     return res
 
@@ -201,8 +201,8 @@ def tree_to_one(a, b, c, ex = 0.618, positive=True):
         return d1
 
 
-def test_tree_to_one(comp=2, n = 96,  ex=0.618, do_plot = True):
-    ys = get_15m_last_n(comp, n)
+def test_tree_to_one(cid=2, n = 96,  ex=0.618, do_plot = True):
+    ys = get_15m_last_n(cid, n)
     zs = [int(i[1]) for i in ys]
     xs = []
     ps = []
@@ -228,18 +228,18 @@ def test_tree_to_one(comp=2, n = 96,  ex=0.618, do_plot = True):
     return zps
 
 
-def residule(comp=2, n = 96,  ex = 0.618 ):
-    zps = test_tree_to_one(comp, n, ex, do_plot = False)
+def residule(cid=2, n = 96,  ex = 0.618 ):
+    zps = test_tree_to_one(cid, n, ex, do_plot = False)
     resi = sum([abs(i - j) for i, j in zip(zps[0], zps[1])])
     return resi
 
 
-def resi_vs_ex(comp=2, n = 96):
+def resi_vs_ex(cid=2, n = 96):
     # comp2: 0.4,
     xs = []
     rs = []
     for i in range(100):
-        r = residule(comp=comp, n=n, ex = i * 0.01)
+        r = residule(cid=cid, n=n, ex = i * 0.01)
         rs.append(r)
         xs.append(i)
     plt.plot(xs, rs)
@@ -253,7 +253,7 @@ def resi_vs_ex(comp=2, n = 96):
 # example
 r_k_example = 'web_eemsop_company_12_kwh:2016-12-23_171500'
 
-def pred_forward(last_rcds,kwh_sum,pred_d={},sec=1200,app_simple='eemsop',cid=2,fake_now='', **para_d):
+def pred_forward(last_rcds,kwh_sum,comp='company',pred_d={},sec=1200,app_redis_key_word='eemsop',cid=2,fake_now='', **para_d):
     """use power prediction. last_rcds should have time-value pair.
     last_rcds is 3 records, kwh_sum is the sum.
     """
@@ -264,7 +264,7 @@ def pred_forward(last_rcds,kwh_sum,pred_d={},sec=1200,app_simple='eemsop',cid=2,
     def s_fo_int(i):
         return time.strftime('%Y-%m-%d_%H%M%S', time.localtime(i))
     def pk(s):
-        return 'web_%s_%s_kwh:%s' % (app_simple, comp_id, s)
+        return 'web_%s_%s_%s_kwh:%s' % (app_redis_key_word, comp, cid, s)
     if not last_rcds: return {}
     if len(last_rcds) == 3 and (int_fo_s(str(last_rcds[2][0])) - int_fo_s(str(last_rcds[0][0]))) == 1800:
         print(last_rcds)
@@ -304,11 +304,18 @@ def pred_forward(last_rcds,kwh_sum,pred_d={},sec=1200,app_simple='eemsop',cid=2,
     return pred_d
 
 
-def pred_one(cid=2, app='mysql:app_eemsop', app_type='company', app_simple='eemsop', new=True, cid_map=0):
+def pred_one(cid=2, app='mysql:app_eemsop', app_type='company', app_redis_key_word='eemsop', new=True, cid_map=0):
+    """
+    cid,
+    app_type,
+    app_redis_key_word,
+    new,
+    cid_map,
+    """
     if not cid_map: cid_map = cid
-    pred_d = pred_forward(get_15m_last_n(cid, app=app, new=new),  get_sum_today(cid, app=app), app_simple=app_simple, cid=cid_map)
+    pred_d = pred_forward(get_15m_last_n(cid, app=app, new=new),  get_sum_today(cid, app=app), app_redis_key_word=app_redis_key_word, cid=cid_map)
     r_set_lst_keys(pred_d)
-    print(pred_d)
+    # print(pred_d)
     import time
     time.sleep(0.6)
     # return pred_one(app=app, app_type=app_type, cid=cid)
@@ -320,12 +327,12 @@ def pred_one(cid=2, app='mysql:app_eemsop', app_type='company', app_simple='eems
     #     if re.match('^--?(\w*)', arg):
     #         va = ''
     #     print(arg)
-    return cid
+    return [cid, pred_d]
 
 
-def fake_26():
+def main():
     while True:
-        pred_one(cid=26, app='mysql:app_eemscr', app_simple='eemsop', new=False, cid_map=2026)
+        pred_one(cid=26, app='mysql:app_eemscr', app_redis_key_word='eemsop', new=False, cid_map=2026)
         print('sleeping for 600')
         time.sleep(600)
 
