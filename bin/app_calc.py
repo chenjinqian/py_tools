@@ -691,6 +691,9 @@ def how_about_sleep(shift=180, interval=900, real_sleep=True):
 
 
 def apply_pli(vr_d, price_d, pli_d, interval=900):
+    """
+    convert kwhttli and pttl variables into prince infomation, using price_d and meter_control_police_dic.
+    """
     if not vr_d:
         return {}
     tmp_d = {}
@@ -842,7 +845,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
                 else:
                     v_add = v1 + v2 if (v1 and v2) else (v1 or v2)
                 d1[k1] = v_add
-            return d1
+            return d1 or d2
 
         # TODO: should merge fee_d and pli_d into one dict.
         ks, vr_d = vrs_extr_one
