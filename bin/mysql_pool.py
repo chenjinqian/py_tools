@@ -108,7 +108,7 @@ class MySQLdb_pool(object):
 
 class MySQLWrapper(object):
 
-    def __init__(self, host='127.0.0.1', user='mysql', db='5432', cnx_num=5, delay=True, refresh_cycle=1, **dic):
+    def __init__(self, host='127.0.0.1', user='mysql', db='5432', cnx_num=10, delay=True, refresh_cycle=1, **dic):
         self.delay = delay
         self.host = host
         self.db=db
