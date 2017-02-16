@@ -108,18 +108,21 @@ class MySQLdb_pool(object):
 
 class MySQLWrapper(object):
 
-    def __init__(self, host='127.0.0.1', user='mysql', db='5432', cnx_num=5, delay=True, **dic):
+    def __init__(self, host='127.0.0.1', user='mysql', db='5432', cnx_num=5, delay=True, refresh_cycle=1, **dic):
         self.delay = delay
         self.host = host
         self.db=db
         self.user=user
         # self.dic=dic
         self.cnx_num = cnx_num
+        self.refresh_cycle = refresh_cycle
+        self.refresh_cunt = 0
         # print('dic',dic)
         self.pool = MySQLdb_pool(host = self.host, db = self.db, user = self.user, cnx_num = self.cnx_num, delay=self.delay, **dic)
 
 
     def do_work(self, q, commit=False):
+        self.refresh_cunt += 1
         con = self.pool.getConnection()
         try:
             if not (con and con.open):
@@ -132,7 +135,11 @@ class MySQLWrapper(object):
                 res = c.fetchall()
                 if commit:
                     con.commit()
-                self.pool.returnConnection(con)
+                if self.refresh_cunt == self.refresh_cycle * self.cnx_num + 1:
+                    self.refresh_cunt = 0
+                    self.pool.returnConnection(None)
+                else:
+                    self.pool.returnConnection(con)
             # # should I add this line? will be much longer.
             # c.close()
             return res
