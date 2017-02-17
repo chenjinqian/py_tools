@@ -85,6 +85,8 @@ default_d['ckps'] = [0, 60*30, 60*30*7]
 # right now, half hour, three and half hour.
 default_d['ckps_four_hour'] = [0, 60*30*2, 60*30*3, 60*30*4, 60*30*5, 60*30*6]
 # Notice: this should not overlap nore be neared, if the first round init problem is not solved.
+default_d['pttl_filter'] = False
+# if pttl value have obvious bad points, filter this points out using pee-compare in sumup function.
 rsrv_default = default_d['rsrv']
 app_lst_default = default_d['app_lst']
 vrs_s_default = default_d['vrs_s']
@@ -319,6 +321,7 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
     then get all value/near ckp value, using redis pipline.
     last, make dict, vrs is key, time_int as sub key, variable value as dict value.
     ..1
+    TODO: fix kwh and pttl replace bug.
     """
     r = redis_cursors_d[rsrv]
     p = r.pipeline(transaction=True)
@@ -443,7 +446,7 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900, print_val=Fal
         return rt
 
     # print('vrs is:%s' % (vrs))
-    if not (d['left'] and d['right']):
+    if not (d['left'] and not d['right']):
         return history
     ks_left = sorted(d['left'].keys(), reverse=True)
     ks_right = sorted(d['right'].keys())
