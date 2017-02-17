@@ -81,7 +81,7 @@ default_d = {}
 default_d['rsrv'] = 'redis:meter'
 default_d['app_lst'] = ['mysql:app_eemsop']
 default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
-default_d['ckps'] = [0, 60*30, 60*60*3]
+default_d['ckps'] = [0, 60*30, 60*30*7] # right now, half hour, three and half hour.
 default_d['ckps_four_hour'] = [0, 60*30*2, 60*30*3, 60*30*4, 60*30*5, 60*30*6]
 # Notice: this should not overlap nore be neared, if the first round init problem is not solved.
 rsrv_default = default_d['rsrv']
