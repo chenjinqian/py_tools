@@ -369,7 +369,7 @@ def main():
         for j in workshop_all:
             print(int(j[0]))
             pred_one(company_id=int(i[0]), app='mysql:app_eemsop', app_redis_key_word='eemsop', comp='workshop')
-        if cnt > 5:
+        if cnt > 100:
             company_all = sopw("select id from company;")
             workshop_all = sopw("select id from workshops;")
         print('sleeping for 600')

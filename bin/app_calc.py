@@ -342,9 +342,6 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
         else:
             s = time.strftime('%Y%m%d_%H%M%S',time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
         return s
-    min_sec = sorted([ts_ckp_int(i, min_sec=True) for i in range(900)])
-    min_sec_vrs = ['%s_%s' % (ms, vr) for ms in min_sec for vr in vrs]
-    # print('len min_sec_vrs %s, min_sec_vrs[0], %s, min_sec_vrs[-1], %s'%(len(min_sec_vrs), min_sec_vrs[0], min_sec_vrs[1]))
     def time_lst(ckp_shift, left=True, one_key=True):
         """not used now"""
         rst = []
@@ -368,67 +365,119 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
     keys_right = time_lst(ckp_shift, left=False)
     lk1, lk2 = keys_left[0]
     rk1, rk2 = keys_right[0]
-    # p.hgetall('meterdata_%s_%s_new' % (mid, lk1))
-    # p.hgetall('meterdata_%s_%s_new' % (mid, rk1))
-    # left_dict , right_dict = p.execute()
-    # usefull_left_key_values = [['%s%s' % (lk1[:-2], i[:4]),i[5:] , left_dict[i]] for i in min_sec_vrs if i in left_dict]
-    # usefull_right_key_values = [['%s%s' % (rk1[:-2], i[:4]), i[5:], right_dict[i]] for i in min_sec_vrs if i in right_dict]
-    # def convert_result_to_dict(rlt_lst, d = {}):
-    #     for rlt in rlt_lst:
-    #         ts, vr, val = rlt
-    #         if ts in d:
-    #             d[ts] = '%s,%s=%s' % (d[ts], vr, val)
+    ### v2
+    min_sec = sorted([ts_ckp_int(i, min_sec=True) for i in range(900)])
+    min_sec_vrs = ['%s_%s' % (ms, vr) for ms in min_sec for vr in vrs]
+    # print('len min_sec_vrs %s, min_sec_vrs[0], %s, min_sec_vrs[-1], %s'%(len(min_sec_vrs), min_sec_vrs[0], min_sec_vrs[1]))
+    p.hgetall('meterdata_%s_%s_new' % (mid, lk1))
+    p.hgetall('meterdata_%s_%s_new' % (mid, rk1))
+    left_dict , right_dict = p.execute()
+    usefull_left_key_values = [['%s%s' % (lk1[:-2], i[:4]),i[5:] , left_dict[i]] for i in min_sec_vrs if i in left_dict]
+    usefull_right_key_values = [['%s%s' % (rk1[:-2], i[:4]), i[5:], right_dict[i]] for i in min_sec_vrs if i in right_dict]
+    def convert_result_to_dict(rlt_lst, d = {}):
+        for rlt in rlt_lst:
+            ts, vr, val = rlt
+            if ts in d:
+                d[ts] = '%s,%s=%s' % (d[ts], vr, val)
+            else:
+                d[ts] = '%s=%s' % (vr, val)
+        return d
+    left_rlt_d = {}
+    right_rlt_d = {}
+    convert_result_to_dict(usefull_left_key_values, left_rlt_d)
+    convert_result_to_dict(usefull_right_key_values, right_rlt_d)
+    ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
+    res_d = {}
+    res_d['left'] = left_rlt_d
+    res_d['right'] = right_rlt_d
+    return [left_rlt_d, res_d, ts_ckp, right_rlt_d]
+
+    # ### v3
+    # ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
+    # meter_min_vrs_left =  ['meterdata_%s_%s_%s' % (mid, lk1, vr) for vr in vrs]
+    # meter_min_vrs_right = ['meterdata_%s_%s_%s' % (mid, rk1, vr) for vr in vrs]
+    # meter_min_vrs_all = meter_min_vrs_left + meter_min_vrs_right
+    # for meter_min_vr in meter_min_vrs_all:
+    #     p.hgetall(meter_min_vr)
+    # rlt_all = p.execute(s)
+    # data_dic_l = []
+    # data_dic_r = []
+    # for i, j in zip(meter_min_vrs_left, rlt_all):
+    #     data_dic_l.append([i, j])
+    # empty_lst = [None for i in meter_min_vrs_left]
+    # for i, j in zip(empty_lst + meter_min_vrs_right, rlt_all):
+    #     if not i :
+    #         continue
+    #     else:
+    #         data_dic_r.append([i, j])
+    # # for meter_min_vr in meter_min_vrs_left:
+    # #     p.hgetall(meter_min_vr)
+    # # rlt_left= p.execute()
+    # # for meter_min_vr in meter_min_vrs_right:
+    # #     p.hgetall(meter_min_vr)
+    # # rlt_right= p.execute()
+    # res_d = {}
+    # def convert_dict_format(lst, d = {}):
+    #     meter_min_vrs_s, min_sec_d = lst
+    #     split_it = meter_min_vrs_s.split('_')
+    #     vr = split_it[-1]
+    #     keys_min_sec = min_sec_d.keys()
+    #     for i in keys_min_sec:
+    #         new_key = '%s%s' % ('_'.join(split_it[:-1])[:-2], i)
+    #         if new_key in d:
+    #             d[new_key] = '%s,%s' % (d[new_key], min_sec_d[i])
     #         else:
-    #             d[ts] = '%s=%s' % (vr, val)
+    #             d[new_key] = '%s' % min_sec_d[i]
     #     return d
     # left_rlt_d = {}
     # right_rlt_d = {}
-    # convert_result_to_dict(usefull_left_key_values, left_rlt_d)
-    # convert_result_to_dict(usefull_right_key_values, right_rlt_d)
-    # ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
-    # res_d = {}
+    # for i in data_dic_l:
+    #     convert_dict_format(i, left_rlt_d)
+    # for i in data_dic_r:
+    #     convert_dict_format(i, right_rlt_d)
     # res_d['left'] = left_rlt_d
-    # res_d['right'] = right_rlt_d
+    # res_d['right']= right_rlt_d
     # return [left_rlt_d, res_d, ts_ckp, right_rlt_d]
 
-    print(lk1)
-    for sub_dic_key in min_sec_vrs:
-        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
-    for sub_dic_key in min_sec_vrs:
-        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
-    # 43200 query, only 678 needed one, all keys is  5410.
-    ta = time.time()
-    for sub_dic_key in min_sec_vrs:
-        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
-    rlt1 = p.execute()
-    # 1
-    tb = time.time()
-    p.hgetall('meterdata_%s_%s_new' % (mid, lk1))
-    rlt2 = p.execute()
-    # 2
-    tc = time.time()
-    keys = rlt2[0].keys()
-    # 3
-    td = time.time()
-    for valid_key in keys:
-        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % valid_key)
-    rlt2 = p.execute()
-    # 4
-    te = time.time()
-    usefull_valid_keys = [i for i in min_sec_vrs if i in rlt2[0]]
-    # 5
-    tf = time.time()
-    for usefull_key in usefull_valid_keys:
-        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % usefull_key)
-    rlt3 = p.execute()
-    # 5
-    tg = time.time()
-    p.hkeys('meterdata_%s_%s_new' % (mid, lk1))
-    hkeys = p.execute()
-    th = time.time()
-    print('query',tb-ta,'hgetall', tc-tb,'.keys()', td-tc,'valid keys', te-td,
-          'filter keys', tf-te, 'usefull',tg - tf, 'hkeys', th - tg)
-    return rlt3
+    ### testing redis reading times
+    # print(lk1)
+    # for sub_dic_key in min_sec_vrs:
+    #     p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
+    # for sub_dic_key in min_sec_vrs:
+    #     p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
+    # # 43200 query, only 678 needed one, all keys is  5410.
+    # ta = time.time()
+    # for sub_dic_key in min_sec_vrs:
+    #     p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
+    # rlt1 = p.execute()
+    # # 1
+    # tb = time.time()
+    # p.hgetall('meterdata_%s_%s_new' % (mid, lk1))
+    # rlt2 = p.execute()
+    # # 2
+    # tc = time.time()
+    # keys = rlt2[0].keys()
+    # # 3
+    # td = time.time()
+    # for valid_key in keys:
+    #     p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % valid_key)
+    # rlt2 = p.execute()
+    # # 4
+    # te = time.time()
+    # usefull_valid_keys = [i for i in min_sec_vrs if i in rlt2[0]]
+    # # 5
+    # tf = time.time()
+    # for usefull_key in usefull_valid_keys:
+    #     p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % usefull_key)
+    # rlt3 = p.execute()
+    # # 5
+    # tg = time.time()
+    # p.hkeys('meterdata_%s_%s_new' % (mid, lk1))
+    # hkeys = p.execute()
+    # th = time.time()
+    # print('query',tb-ta,'hgetall', tc-tb,'.keys()', td-tc,'valid keys', te-td,
+    #       'filter keys', tf-te, 'usefull',tg - tf, 'hkeys', th - tg)
+    # return rlt3
 
 # # test:
 # ta = time.time()
@@ -485,7 +534,9 @@ def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900, print_val=Fal
         return rt
 
     # print('vrs is:%s' % (vrs))
-    if not (d['left'] and not d['right']):
+    if not (d['left'] or d['right']):
+        # # can not use not a and not b
+        # print('using history')
         return history
     ks_left = sorted(d['left'].keys(), reverse=True)
     ks_right = sorted(d['right'].keys())
@@ -743,14 +794,17 @@ def apply_pli(vr_d, price_d, pli_d,meter_id_time_str='', interval=900):
     """
     if not vr_d:
         return {}
-    data_time_str = time.strptime(vr_d['_times'], '%Y%m%d_%H%M%S')
-    data_time_int = time.mktime(data_time_str)
     config_time_str = time.strptime(meter_id_time_str, '%Y%m%d_%H%M%S')
     config_time_int = time.mktime(config_time_str)
-    # print('data time is ', data_time_str,'config time is', config_time_str)
+    # print(config_time_str)
+    data_time_str = time.strptime(vr_d['_times'], '%Y%m%d_%H%M%S')
+    data_time_int = time.mktime(data_time_str)
+    # print('data time is ', time.strftime('%Y-%m-%d %H:%M:%S', data_time_str),
+    #       'config time is', time.strftime('%Y-%m-%d %H:%M:%S',config_time_str))
     if config_time_int > data_time_int:
-        # # do not return any value if the config is newer.
+        print("notice, config time expired, not usint this data.")
         return {}
+        # # do not return any value if the config is newer.
 
     tmp_d = {}
     # print(vr_d, price_d, pli_d)
