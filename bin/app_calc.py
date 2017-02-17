@@ -154,17 +154,26 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='com
         else:
             rst_int = []
         return rst_int
-    # default options 'meter_id
-    sql = 'select related_gmids from %s where id=%s;' % (comp, cid)
+
+    sql = 'select related_meters from %s where id=%s;' % (comp, cid)
     rst = worker(sql)
     if rst:
-        mids = rst[0][0].split(',')
-    else:
-        mids = []
-    return [str(i) for i in mids if i]
+        # print(rst)
+        try:
+            tmp = rst[0][0].split('/')[-1]
+            meter_configs_time, mids_str = tmp.split(':')
+            mids = [str(i) for i in mids_str.split(',') if i]
+        except:
+            meter_configs_time = ''
+            mids = []
+    if option == 'meter_id_time':
+        return meter_configs_time
+    return mids
+    # default options 'meter_id
 
 
-def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default, interval=900, rsrv=rsrv_default, left_null=False):
+def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default,
+                   interval=900, rsrv=rsrv_default, left_null=False):
     """
     therre are three main step to caculate one meter,
     first, get data (for given meter id) near checkpoint from redis server using get_near_keys method.
@@ -222,7 +231,7 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
         left_values = None
         p.hkeys('meterdata_%s_%s' % (mid, lk1))
     if not right_null:
-        p.hgetall('meterdata_%s_%s' % (mid, lk1))
+        p.hgetall('meterdata_%s_%s' % (mid, rk1))
     else:
         right_values = None
         p.hkeys('meterdata_%s_%s' % (mid, rk1))
@@ -253,7 +262,7 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
             left_value = None
     if not right_null:
         right_values = r_dok
-        n = min(len(right_values.keys(), near))
+        n = min(len(right_values.keys()), near)
         right_key = sorted(right_values.keys())[0:n] if right_values else None
         ##
         right_value = [right_values[i] for i in right_key] if right_key else None
@@ -322,16 +331,20 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
     last, make dict, vrs is key, time_int as sub key, variable value as dict value.
     ..1
     TODO: fix kwh and pttl replace bug.
+    return all same result
     """
     r = redis_cursors_d[rsrv]
     p = r.pipeline(transaction=True)
-    def ts_ckp_int(i, min_sec = True):
+    vrs = [i[0] for i in vrs_s]
+    def ts_ckp_int(i, min_sec = False):
         if min_sec:
             s = time.strftime('%M%S', time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
         else:
             s = time.strftime('%Y%m%d_%H%M%S',time.localtime(int(time.time())-(int(time.time()) % interval) + int(i)))
         return s
-
+    min_sec = sorted([ts_ckp_int(i, min_sec=True) for i in range(900)])
+    min_sec_vrs = ['%s_%s' % (ms, vr) for ms in min_sec for vr in vrs]
+    # print('len min_sec_vrs %s, min_sec_vrs[0], %s, min_sec_vrs[-1], %s'%(len(min_sec_vrs), min_sec_vrs[0], min_sec_vrs[1]))
     def time_lst(ckp_shift, left=True, one_key=True):
         """not used now"""
         rst = []
@@ -355,66 +368,92 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
     keys_right = time_lst(ckp_shift, left=False)
     lk1, lk2 = keys_left[0]
     rk1, rk2 = keys_right[0]
-    if not left_null:
-        p.hgetall('meterdata_%s_%s' % (mid, lk1))
-    else:
-        left_values = None
-        p.hkeys('meterdata_%s_%s' % (mid, lk1))
-    if not right_null:
-        p.hgetall('meterdata_%s_%s' % (mid, lk1))
-    else:
-        right_values = None
-        p.hkeys('meterdata_%s_%s' % (mid, rk1))
+    # p.hgetall('meterdata_%s_%s_new' % (mid, lk1))
+    # p.hgetall('meterdata_%s_%s_new' % (mid, rk1))
+    # left_dict , right_dict = p.execute()
+    # usefull_left_key_values = [['%s%s' % (lk1[:-2], i[:4]),i[5:] , left_dict[i]] for i in min_sec_vrs if i in left_dict]
+    # usefull_right_key_values = [['%s%s' % (rk1[:-2], i[:4]), i[5:], right_dict[i]] for i in min_sec_vrs if i in right_dict]
+    # def convert_result_to_dict(rlt_lst, d = {}):
+    #     for rlt in rlt_lst:
+    #         ts, vr, val = rlt
+    #         if ts in d:
+    #             d[ts] = '%s,%s=%s' % (d[ts], vr, val)
+    #         else:
+    #             d[ts] = '%s=%s' % (vr, val)
+    #     return d
+    # left_rlt_d = {}
+    # right_rlt_d = {}
+    # convert_result_to_dict(usefull_left_key_values, left_rlt_d)
+    # convert_result_to_dict(usefull_right_key_values, right_rlt_d)
+    # ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
+    # res_d = {}
+    # res_d['left'] = left_rlt_d
+    # res_d['right'] = right_rlt_d
+    # return [left_rlt_d, res_d, ts_ckp, right_rlt_d]
 
-    [l_dok, r_dok] = p.execute()
-    if not left_null:
-        left_values = l_dok
-        try:
-            left_key = sorted(left_values.keys(), reverse=True)[0:min(len(left_values.keys()), near)] \
-                       if left_values else None
-        except:
-            import sys, os
-            print(str(sys.exc_info()))
-        left_value = [left_values[i] for i in left_key] if left_key else None
-    else:
-        left_keys_raw = l_dok
-        left_keys = sorted(left_keys_raw, reverse=True)
-        left_key = left_keys[0:min(len(left_keys), near)] if left_keys else None
-        if left_key:
-            for i in left_key:
-                p.hget('meterdata_%s_%s' % (mid, lk1), i)
-            left_value = p.execute()
-        else:
-            left_value = None
-    if not right_null:
-        right_values = r_dok
-        n = min(len(right_values.keys(), near))
-        right_key = sorted(right_values.keys())[0:n] if right_values else None
-        right_value = [right_values[i] for i in right_key] if right_key else None
-    else:
-        right_keys_raw = r_dok
-        right_keys = sorted(right_keys_raw)
-        right_key = right_keys[0:min(len(right_keys), near)] if right_keys else None
-        if right_key:
-            for i in right_key:
-                p.hget('meterdata_%s_%s' % (mid, rk1), i)
-            right_value = p.execute()
-        else:
-            right_value = None
-    if right_null:
-        right_values = None
-    else:
-        right_values = r.hgetall('meterdata_%s_%s' % (mid, rk1))
-    res_d = {'left':{}, 'right':{}}
-    if left_key:
-        for i, j  in zip(left_key, left_value):
-            res_d['left'][i] = j
-    if right_key:
-        for i, j in zip(right_key, right_value):
-            res_d['right'][i] = j
-    ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
-    return [left_values, res_d, ts_ckp, right_values]
+    print(lk1)
+    for sub_dic_key in min_sec_vrs:
+        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
+    for sub_dic_key in min_sec_vrs:
+        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
+    # 43200 query, only 678 needed one, all keys is  5410.
+    ta = time.time()
+    for sub_dic_key in min_sec_vrs:
+        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % sub_dic_key)
+    rlt1 = p.execute()
+    # 1
+    tb = time.time()
+    p.hgetall('meterdata_%s_%s_new' % (mid, lk1))
+    rlt2 = p.execute()
+    # 2
+    tc = time.time()
+    keys = rlt2[0].keys()
+    # 3
+    td = time.time()
+    for valid_key in keys:
+        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % valid_key)
+    rlt2 = p.execute()
+    # 4
+    te = time.time()
+    usefull_valid_keys = [i for i in min_sec_vrs if i in rlt2[0]]
+    # 5
+    tf = time.time()
+    for usefull_key in usefull_valid_keys:
+        p.hget('meterdata_%s_%s_new' % (mid, lk1), '%s' % usefull_key)
+    rlt3 = p.execute()
+    # 5
+    tg = time.time()
+    p.hkeys('meterdata_%s_%s_new' % (mid, lk1))
+    hkeys = p.execute()
+    th = time.time()
+    print('query',tb-ta,'hgetall', tc-tb,'.keys()', td-tc,'valid keys', te-td,
+          'filter keys', tf-te, 'usefull',tg - tf, 'hkeys', th - tg)
+    return rlt3
 
+# # test:
+# ta = time.time()
+# r31_v1 = get_near_keys(35436, right_null = False)
+# tb = time.time()
+# print('v1', tb - ta)
+# ta = time.time()
+# r31_v2 = get_near_keys_v2(35436)
+# tb = time.time()
+# print('v2', tb - ta)
+
+# ta = time.time()
+# r31_v1 = get_near_keys(1994, right_null = False)
+# tb = time.time()
+# print('v1', tb - ta)
+# ta = time.time()
+# r31_v2 = get_near_keys_v2(1994)
+# tb = time.time()
+# print('v2', tb - ta)
+
+# ('v1', 0.442493200302124)
+# ('v2', 0.5221259593963623)
+# ('v1', 0.29241108894348145)
+# ('v2', 0.37743306159973145)
+# Burn.
 
 def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900, print_val=False):
     """d is like {'left':{'20170106_121445':'kwhttli=12,kwhttle=1,pttli=2,pttle=3'},
@@ -681,6 +720,8 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company', patch=True):
     for ap_comp in rst_d.keys():
         for cid in rst_d[ap_comp].keys():
             rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app, comp=comp_for_sql)
+            rst_d[ap_comp][cid]['meter_id_time'] = sql_get_mids_cids_or_price(cid, option='meter_id_time', app=app, comp=comp_for_sql)
+            # meter_config is like {'config_start': '2017-02-17_12:00:00'}
     return rst_d
 
 
@@ -695,12 +736,22 @@ def how_about_sleep(shift=180, interval=900, real_sleep=True):
     return sleep_for
 
 
-def apply_pli(vr_d, price_d, pli_d, interval=900):
+def apply_pli(vr_d, price_d, pli_d,meter_id_time_str='', interval=900):
     """
+    vr_d is incr_sumup result, price_d is meta_info 'price' keys, pli_d is meter_info key.
     convert kwhttli and pttl variables into prince infomation, using price_d and meter_control_police_dic.
     """
     if not vr_d:
         return {}
+    data_time_str = time.strptime(vr_d['_times'], '%Y%m%d_%H%M%S')
+    data_time_int = time.mktime(data_time_str)
+    config_time_str = time.strptime(meter_id_time_str, '%Y%m%d_%H%M%S')
+    config_time_int = time.mktime(config_time_str)
+    # print('data time is ', data_time_str,'config time is', config_time_str)
+    if config_time_int > data_time_int:
+        # # do not return any value if the config is newer.
+        return {}
+
     tmp_d = {}
     # print(vr_d, price_d, pli_d)
     index = 3
@@ -860,10 +911,11 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
         cid = key_get_out(ks, 2)[1]
         price_info_d = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['price']
         pli_info_d   = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'][meter_id]
+        meter_id_time_str = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id_time']
         # print(vr_d, price_info_d, pli_info_d)
         # time.sleep(1000)
         # print(vr_d)
-        fee_meter_new = apply_pli(vr_d, price_info_d, pli_info_d)
+        fee_meter_new = apply_pli(vr_d, price_info_d, pli_info_d, meter_id_time_str)
         # print( 'vr_d',vr_d)
         if not cid_fee_key in fee_d:
             fee_d[cid_fee_key] = fee_meter_new
@@ -886,6 +938,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
     vrs_extr = [i for i in map(vrs_interval_sumup, redis_rcds) if i]
     # # use incr_sumup method to get the vrs-incr dict.
     fee_lst = map(fee_reduce_mid, vrs_extr)
+    # # this fee_reduce_mid function use fee_d_default dict as recoder, and changes it.
     # print('cpu time %s' % (time.time() - t_b))
     print('spend time %s' % (time.time() - t_s))
     # return vrs_extr
@@ -1002,11 +1055,42 @@ vr_ext_one = ['mysql:app_eemscr/company/3/2166/20170111_194500',
                'pttl': [194.30324470, 0.0],
                '_times': '20170111_193000'}]
 
-comp_info_d_one = {'meter_ids': [34758, 2159, 2166, 2024, 2016, 2019, 2125, 2000, 2075, 2106],
-                   'price': {'f': 0.5846,
-                             'hours': 'vvvvvvvvfpppfffffffpppff',
-                             'p': 0.9329,
-                             'v': 0.3167}}
+comp_info_d_one = {'meter_id': {'2612': {'ctnum': '2',
+                                         'ctr': '30.0',
+                                         'dev_mac': '0a00901d84f2',
+                                         'dev_model': 'pb600',
+                                         'gmid': '2612',
+                                         'm_kwhttli': '0.4652',
+                                         'm_pttl': '0.4652',
+                                         'meter_sn': '',
+                                         'ptr': '100.0',
+                                         'r_ia': '13.956',
+                                         'r_kwhttl': '1395.6',
+                                         'r_pa': '1395.6',
+                                         'r_pttl': '1395.6',
+                                         'r_ua': '100.0',
+                                         'use_energy': '0',
+                                         'use_power': '1'},
+                                '2641': {'ctnum': '2',
+                                         'ctr': '30.0',
+                                         'dev_mac': '0a01900b84f2',
+                                         'dev_model': 'pb600',
+                                         'gmid': '2641',
+                                         'm_kwhttli': '0.4652',
+                                         'm_pttl': '0.4652',
+                                         'meter_sn': '',
+                                         'ptr': '100.0',
+                                         'r_ia': '13.956',
+                                         'r_kwhttl': '1395.6',
+                                         'r_pa': '1395.6',
+                                         'r_ua': '100.0',
+                                         'use_energy': '0',
+                                         'use_power': '1'}},
+                   'meter_id_time': '20160909_000100',
+                   'price': {'f': 0.5418,
+                             'hours': 'vvvvvvvvpppfffffffpppfff',
+                             'p': 0.8623,
+                             'v': 0.2953}}
 
 pli_one = {'ctnum': '2',
            'ctr': '10.0',
