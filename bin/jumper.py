@@ -358,7 +358,9 @@ def main():
     sopw = mysql_worker_d['mysql:app_eemsop']
     company_all = sopw("select id from company;")
     workshop_all = sopw("select id from workshops;")
+    cnt = 0
     while True:
+        cnt += 1
         # pred_one(company_id=26, app='mysql:app_eemscr', app_redis_key_word='eemsop', use_kwhi=False, company_id_map=2026)
         # rlt25 = pred_one(company_id=2025, app='mysql:app_eemsop', app_redis_key_word='eemsop')
         for i in company_all:
@@ -367,6 +369,9 @@ def main():
         for j in workshop_all:
             print(int(j[0]))
             pred_one(company_id=int(i[0]), app='mysql:app_eemsop', app_redis_key_word='eemsop', comp='workshop')
+        if cnt > 5:
+            company_all = sopw("select id from company;")
+            workshop_all = sopw("select id from workshops;")
         print('sleeping for 600')
         # time.sleep(600)
         how_about_sleep()
