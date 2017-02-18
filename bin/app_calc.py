@@ -164,12 +164,14 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='com
         try:
             tmp = rst[0][0].split('/')[-1]
             meter_configs_time, mids_str = tmp.split(':')
-            if mid_str == 'Null' or mid_str == 'null'  or mid_str == 'NULL':
+            if mids_str == 'Null' or mids_str == 'null'  or mids_str == 'NULL':
                 mids = []
             else:
                 mids = [str(i) for i in mids_str.split(',') if i]
         except:
-            pass
+            import sys
+            print(sys.exc_info())
+
     if option == 'meter_id_time':
         return meter_configs_time
     return mids
