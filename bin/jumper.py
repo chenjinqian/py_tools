@@ -6,9 +6,9 @@ import read_config as rcfg
 import redis
 import mysql_pool as mpol
 
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 import numpy as np
-import scipy as sp
+# import scipy as sp
 import time
 
 import time, os, sys
@@ -44,8 +44,9 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
     pol_d = {}
     for db in db_lst:
         # pol_d[db] = rpol.RedisWrapper(**cfgd[db]).get_cursor
-        p = redis.ConnectionPool(**cfgd[db])
-        r = redis.Redis(connection_pool=p)
+        # p = redis.ConnectionPool(**cfgd[db])
+        # r = redis.Redis(connection_pool=p)
+        r = redis.Redis(**cfgd[db])
         pol_d[db] = r
     return pol_d
 
