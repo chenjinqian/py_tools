@@ -157,19 +157,24 @@ def sql_get_mids_cids_or_price(cid, option='', app='mysql:app_eemsop', comp='com
 
     sql = 'select related_meters from %s where id=%s;' % (comp, cid)
     rst = worker(sql)
+    meter_configs_time = ''
+    mids = []
     if rst:
         # print(rst)
         try:
             tmp = rst[0][0].split('/')[-1]
             meter_configs_time, mids_str = tmp.split(':')
-            mids = [str(i) for i in mids_str.split(',') if i]
+            if mid_str == 'Null' or mid_str = 'null'  or mid_str = 'NULL':
+                mids = []
+            else:
+                mids = [str(i) for i in mids_str.split(',') if i]
         except:
-            meter_configs_time = ''
-            mids = []
+            pass
     if option == 'meter_id_time':
         return meter_configs_time
     return mids
-    # default options 'meter_id
+    # default options 'meter_id' or 'meter_id_time'
+
 
 
 def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default,
@@ -193,7 +198,7 @@ def calc_meter_acc(mid, time_ckp, history=None, vrs_s=vrs_s_default,
     return [incr, ckp_values]
 
 
-def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=900):
+def get_near_keys_v1(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=False, right_null=True, near=900):
     """redis keys is like r.hget('meterdata_35545_20170106_1558', '20170106_160015')"""
     r = redis_cursors_d[rsrv]
     p = r.pipeline(transaction=True)
@@ -318,9 +323,11 @@ def get_near_keys(mid, ckp_shift=0, interval=900, rsrv='redis:meter', left_null=
     return [left_values, res_d, ts_ckp, right_values]
 
 
-def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
+
+def get_near_keys_v3(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
                      left_null=False, right_null=True, near=900, vrs_s=vrs_s_default):
     """
+    v3
     redis keys has changed, not it is like {15min_ts: {min_second_var:value, ...}},
     this v2 function is basic same as origin, but the return value is not like{time_string: all_vrs_long_string, ...},
     it will be like {vrs_1:{ts_int_1: value, ...}, ...}, this will be easy for kwh_interval to parse.
@@ -365,79 +372,79 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
     keys_right = time_lst(ckp_shift, left=False)
     lk1, lk2 = keys_left[0]
     rk1, rk2 = keys_right[0]
-    ### v2
-    min_sec = sorted([ts_ckp_int(i, min_sec=True) for i in range(900)])
-    min_sec_vrs = ['%s_%s' % (ms, vr) for ms in min_sec for vr in vrs]
-    # print('len min_sec_vrs %s, min_sec_vrs[0], %s, min_sec_vrs[-1], %s'%(len(min_sec_vrs), min_sec_vrs[0], min_sec_vrs[1]))
-    p.hgetall('meterdata_%s_%s_new' % (mid, lk1))
-    p.hgetall('meterdata_%s_%s_new' % (mid, rk1))
-    left_dict , right_dict = p.execute()
-    usefull_left_key_values = [['%s%s' % (lk1[:-2], i[:4]),i[5:] , left_dict[i]] for i in min_sec_vrs if i in left_dict]
-    usefull_right_key_values = [['%s%s' % (rk1[:-2], i[:4]), i[5:], right_dict[i]] for i in min_sec_vrs if i in right_dict]
-    def convert_result_to_dict(rlt_lst, d = {}):
-        for rlt in rlt_lst:
-            ts, vr, val = rlt
-            if ts in d:
-                d[ts] = '%s,%s=%s' % (d[ts], vr, val)
-            else:
-                d[ts] = '%s=%s' % (vr, val)
-        return d
-    left_rlt_d = {}
-    right_rlt_d = {}
-    convert_result_to_dict(usefull_left_key_values, left_rlt_d)
-    convert_result_to_dict(usefull_right_key_values, right_rlt_d)
-    ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
-    res_d = {}
-    res_d['left'] = left_rlt_d
-    res_d['right'] = right_rlt_d
-    return [left_rlt_d, res_d, ts_ckp, right_rlt_d]
-
-    # ### v3
-    # ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
-    # meter_min_vrs_left =  ['meterdata_%s_%s_%s' % (mid, lk1, vr) for vr in vrs]
-    # meter_min_vrs_right = ['meterdata_%s_%s_%s' % (mid, rk1, vr) for vr in vrs]
-    # meter_min_vrs_all = meter_min_vrs_left + meter_min_vrs_right
-    # for meter_min_vr in meter_min_vrs_all:
-    #     p.hgetall(meter_min_vr)
-    # rlt_all = p.execute(s)
-    # data_dic_l = []
-    # data_dic_r = []
-    # for i, j in zip(meter_min_vrs_left, rlt_all):
-    #     data_dic_l.append([i, j])
-    # empty_lst = [None for i in meter_min_vrs_left]
-    # for i, j in zip(empty_lst + meter_min_vrs_right, rlt_all):
-    #     if not i :
-    #         continue
-    #     else:
-    #         data_dic_r.append([i, j])
-    # # for meter_min_vr in meter_min_vrs_left:
-    # #     p.hgetall(meter_min_vr)
-    # # rlt_left= p.execute()
-    # # for meter_min_vr in meter_min_vrs_right:
-    # #     p.hgetall(meter_min_vr)
-    # # rlt_right= p.execute()
-    # res_d = {}
-    # def convert_dict_format(lst, d = {}):
-    #     meter_min_vrs_s, min_sec_d = lst
-    #     split_it = meter_min_vrs_s.split('_')
-    #     vr = split_it[-1]
-    #     keys_min_sec = min_sec_d.keys()
-    #     for i in keys_min_sec:
-    #         new_key = '%s%s' % ('_'.join(split_it[:-1])[:-2], i)
-    #         if new_key in d:
-    #             d[new_key] = '%s,%s' % (d[new_key], min_sec_d[i])
+    # ### v2
+    # min_sec = sorted([ts_ckp_int(i, min_sec=True) for i in range(900)])
+    # min_sec_vrs = ['%s_%s' % (ms, vr) for ms in min_sec for vr in vrs]
+    # # print('len min_sec_vrs %s, min_sec_vrs[0], %s, min_sec_vrs[-1], %s'%(len(min_sec_vrs), min_sec_vrs[0], min_sec_vrs[1]))
+    # p.hgetall('meterdata_%s_%s_new' % (mid, lk1))
+    # p.hgetall('meterdata_%s_%s_new' % (mid, rk1))
+    # left_dict , right_dict = p.execute()
+    # usefull_left_key_values = [['%s%s' % (lk1[:-2], i[:4]),i[5:] , left_dict[i]] for i in min_sec_vrs if i in left_dict]
+    # usefull_right_key_values = [['%s%s' % (rk1[:-2], i[:4]), i[5:], right_dict[i]] for i in min_sec_vrs if i in right_dict]
+    # def convert_result_to_dict(rlt_lst, d = {}):
+    #     for rlt in rlt_lst:
+    #         ts, vr, val = rlt
+    #         if ts in d:
+    #             d[ts] = '%s,%s=%s' % (d[ts], vr, val)
     #         else:
-    #             d[new_key] = '%s' % min_sec_d[i]
+    #             d[ts] = '%s=%s' % (vr, val)
     #     return d
     # left_rlt_d = {}
     # right_rlt_d = {}
-    # for i in data_dic_l:
-    #     convert_dict_format(i, left_rlt_d)
-    # for i in data_dic_r:
-    #     convert_dict_format(i, right_rlt_d)
+    # convert_result_to_dict(usefull_left_key_values, left_rlt_d)
+    # convert_result_to_dict(usefull_right_key_values, right_rlt_d)
+    # ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
+    # res_d = {}
     # res_d['left'] = left_rlt_d
-    # res_d['right']= right_rlt_d
+    # res_d['right'] = right_rlt_d
     # return [left_rlt_d, res_d, ts_ckp, right_rlt_d]
+
+    ### v3
+    ts_ckp = [ts_ckp_int(-interval-ckp_shift), ts_ckp_int(-ckp_shift)]
+    meter_min_vrs_left =  ['meterdata_%s_%s_%s' % (mid, lk1, vr) for vr in vrs]
+    meter_min_vrs_right = ['meterdata_%s_%s_%s' % (mid, rk1, vr) for vr in vrs]
+    meter_min_vrs_all = meter_min_vrs_left + meter_min_vrs_right
+    for meter_min_vr in meter_min_vrs_all:
+        p.hgetall(meter_min_vr)
+    rlt_all = p.execute()
+    data_dic_l = []
+    data_dic_r = []
+    for i, j in zip(meter_min_vrs_left, rlt_all):
+        data_dic_l.append([i, j])
+    empty_lst = [None for i in meter_min_vrs_left]
+    for i, j in zip(empty_lst + meter_min_vrs_right, rlt_all):
+        if not i :
+            continue
+        else:
+            data_dic_r.append([i, j])
+    # for meter_min_vr in meter_min_vrs_left:
+    #     p.hgetall(meter_min_vr)
+    # rlt_left= p.execute()
+    # for meter_min_vr in meter_min_vrs_right:
+    #     p.hgetall(meter_min_vr)
+    # rlt_right= p.execute()
+    res_d = {}
+    def convert_dict_format(lst, d = {}):
+        meter_min_vrs_s, min_sec_d = lst
+        split_it = meter_min_vrs_s.split('_')
+        vr = split_it[-1]
+        keys_min_sec = min_sec_d.keys()
+        for i in keys_min_sec:
+            new_key = '%s%s' % ('_'.join(split_it[2:-1])[:-2], i)
+            if new_key in d:
+                d[new_key] = '%s,%s=%s' % (d[new_key], vr ,min_sec_d[i])
+            else:
+                d[new_key] = '%s=%s' % ( vr,min_sec_d[i])
+        return d
+    left_rlt_d = {}
+    right_rlt_d = {}
+    for i in data_dic_l:
+        convert_dict_format(i, left_rlt_d)
+    for i in data_dic_r:
+        convert_dict_format(i, right_rlt_d)
+    res_d['left'] = left_rlt_d
+    res_d['right']= right_rlt_d
+    return [left_rlt_d, res_d, ts_ckp, right_rlt_d]
 
     ### testing redis reading times
     # print(lk1)
@@ -503,6 +510,9 @@ def get_near_keys_v2(mid, ckp_shift=0, interval=900, rsrv='redis:meter',
 # ('v1', 0.29241108894348145)
 # ('v2', 0.37743306159973145)
 # Burn.
+
+get_near_keys = get_near_keys_v3
+# # use new key structure.
 
 def kwh_interval(d, history=[], vrs_s=vrs_s_default, interval=900, print_val=False):
     """d is like {'left':{'20170106_121445':'kwhttli=12,kwhttle=1,pttli=2,pttle=3'},
@@ -794,18 +804,20 @@ def apply_pli(vr_d, price_d, pli_d,meter_id_time_str='', interval=900):
     """
     if not vr_d:
         return {}
-    config_time_str = time.strptime(meter_id_time_str, '%Y%m%d_%H%M%S')
-    config_time_int = time.mktime(config_time_str)
-    # print(config_time_str)
-    data_time_str = time.strptime(vr_d['_times'], '%Y%m%d_%H%M%S')
-    data_time_int = time.mktime(data_time_str)
-    # print('data time is ', time.strftime('%Y-%m-%d %H:%M:%S', data_time_str),
-    #       'config time is', time.strftime('%Y-%m-%d %H:%M:%S',config_time_str))
-    if config_time_int > data_time_int:
-        print("notice, config time expired, not usint this data.")
-        return {}
-        # # do not return any value if the config is newer.
-
+    try:
+        config_time_str = time.strptime(meter_id_time_str, '%Y%m%d_%H%M%S')
+        config_time_int = time.mktime(config_time_str)
+        # print(config_time_str)
+        data_time_str = time.strptime(vr_d['_times'], '%Y%m%d_%H%M%S')
+        data_time_int = time.mktime(data_time_str)
+        # print('data time is ', time.strftime('%Y-%m-%d %H:%M:%S', data_time_str),
+        #       'config time is', time.strftime('%Y-%m-%d %H:%M:%S',config_time_str))
+        if config_time_int > data_time_int:
+            print("notice, config time expired, not usint this data.")
+            return {}
+            # # do not return any value if the config is newer.
+    except:
+        pass
     tmp_d = {}
     # print(vr_d, price_d, pli_d)
     index = 3
