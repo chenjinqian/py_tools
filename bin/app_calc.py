@@ -85,7 +85,8 @@ mysql_workers_d = mk_mp_d()
 redis_cursors_d = mk_rp_d()
 default_d = {}
 default_d['rsrv'] = 'redis:meter'
-default_d['app_lst'] = ['mysql:app_eemsop', 'mysql:app_eemsyd', 'mysql:app_eemssjc', 'mysql:app_eemsakuup', 'mysql:app_eemsid', 'mysql:app_eemscr', 'mysql:app_eemssec']
+# # 'mysql:app_eemsop', not used
+default_d['app_lst'] = ['mysql:app_eemsyd', 'mysql:app_eemssjc', 'mysql:app_eemsakuup', 'mysql:app_eemsid', 'mysql:app_eemscr', 'mysql:app_eemssec']
 default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
 default_d['ckps'] = [0, 60*30, 60*30*7]
 # right now, half hour, three and half hour.
@@ -896,7 +897,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
 
     one_comp_mids = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'].keys()
     # TODO: use global dict, cache at first 15 mins
-    print('cid is %s, mids is %s' % (cid, one_comp_mids))
+    print('app is %s, cid is %s, mids is %s' % (app, cid, one_comp_mids))
     flag_key = mk_his_key(0, 0, 0)
     if not flag_key in his_d:
         his_d[flag_key] = 'inited'
