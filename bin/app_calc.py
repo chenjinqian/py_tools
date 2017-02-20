@@ -43,9 +43,15 @@ from gevent import monkey;monkey.patch_all()
 # pp4 = ppol(4)
 
 
-def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
+# # if this script is started in other working directiory.
+import os,sys
+this_path = os..path.realpath(os.path.dirname(__file))
+db_ini_path = os.path.join(this_path, '../config/db.ini')
+
+
+def mk_mp_d(ini=db_ini_path, mark='mysql:', worker_only=True):
     """make_mysqlpool_dictory, read config files, and make mysql connection pool instance as dict."""
-    cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+    cfgd = rcfg.ReadConfig_DB(ini).check_config(db_type='mysql', convert_port=True)
     db_lst = [i for i in cfgd.keys() if mark in i]
     pol_d = {}
     pol_worker = {}
@@ -58,9 +64,9 @@ def mk_mp_d(ini='../config/db.ini', mark='mysql:', worker_only=True):
         return [pol_d, pol_worker]
 
 
-def mk_rp_d(ini='../config/db.ini', mark='redis:'):
+def mk_rp_d(ini=db_ini_path, mark='redis:'):
     """make_redispool_dictory"""
-    cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+    cfgd = rcfg.ReadConfig_DB(ini).check_config(db_type='mysql', convert_port=True)
     db_lst = [i for i in cfgd.keys() if mark in i]
     pol_d = {}
     for db in db_lst:
@@ -74,7 +80,7 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
 
 ### global variables ###
 # use dictory for global database connection pool instance.
-cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
+cfgd = rcfg.ReadConfig_DB(db_ini_path).check_config(db_type='mysql', convert_port=True)
 mysql_workers_d = mk_mp_d()
 redis_cursors_d = mk_rp_d()
 default_d = {}
