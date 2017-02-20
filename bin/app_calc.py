@@ -45,7 +45,7 @@ from gevent import monkey;monkey.patch_all()
 
 # # if this script is started in other working directiory.
 import os,sys
-this_path = os..path.realpath(os.path.dirname(__file))
+this_path = os.path.realpath(os.path.dirname(__file__))
 db_ini_path = os.path.join(this_path, '../config/db.ini')
 
 
