@@ -46,6 +46,8 @@ from gevent import monkey;monkey.patch_all()
 # # if this script is started in other working directiory.
 import os,sys
 this_path = os.path.realpath(os.path.dirname(__file__))
+# #### change
+# this_path = os.path.realpath(os.path.dirname('__file__'))
 db_ini_path = os.path.join(this_path, '../config/db.ini')
 
 
@@ -86,7 +88,7 @@ redis_cursors_d = mk_rp_d()
 default_d = {}
 default_d['rsrv'] = 'redis:meter'
 # # 'mysql:app_eemsop', not used
-default_d['app_lst'] = ['mysql:app_eemsyd', 'mysql:app_eemssjc', 'mysql:app_eemsakuup', 'mysql:app_eemsid', 'mysql:app_eemscr', 'mysql:app_eemssec']
+default_d['app_lst'] = ['mysql:app_eemsyd', 'mysql:app_eemsii', 'mysql:app_eemssjc', 'mysql:app_eemsakuup',  'mysql:app_eemscr', 'mysql:app_eemssec']
 default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
 default_d['ckps'] = [0, 60*30, 60*30*7]
 # right now, half hour, three and half hour.
@@ -778,9 +780,10 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company', patch=True):
         except:
             print('#1',str(sys.exc_info()), rst_d.keys())
     for ap_comp in rst_d.keys():
+        app, comp = ap_comp.split('/')
         for cid in rst_d[ap_comp].keys():
             rst_d[ap_comp][cid] = {}
-            meter_id_lst = sql_get_mids_cids_or_price(cid,option='meter_id', app=app, comp=comp_for_sql)
+            meter_id_lst = sql_get_mids_cids_or_price(cid, option='meter_id', app=app, comp=comp_for_sql)
             rst_d[ap_comp][cid]['meter_id'] = {}
             for mid in meter_id_lst:
                 if str(mid) in mids_pli_d:
@@ -788,6 +791,7 @@ def sql_get_all_info(app_lst=app_lst_default, comp='company', patch=True):
                 else:
                     rst_d[ap_comp][cid]['meter_id'][str(mid)] = {}
     for ap_comp in rst_d.keys():
+        app, comp = ap_comp.split('/')
         for cid in rst_d[ap_comp].keys():
             rst_d[ap_comp][cid]['price'] = sql_get_mids_cids_or_price(cid, option='price', app=app, comp=comp_for_sql)
             rst_d[ap_comp][cid]['meter_id_time'] = sql_get_mids_cids_or_price(cid, option='meter_id_time', app=app, comp=comp_for_sql)
@@ -897,7 +901,7 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
 
     one_comp_mids = sql_meta_info['%s/%s' % (app, comp)]['%s'%cid]['meter_id'].keys()
     # TODO: use global dict, cache at first 15 mins
-    print('app is %s, cid is %s, mids is %s' % (app, cid, one_comp_mids))
+    print('app is %s,comp_type is %s, cid is %s, mids is %s' % (app, comp, cid, one_comp_mids))
     flag_key = mk_his_key(0, 0, 0)
     if not flag_key in his_d:
         his_d[flag_key] = 'inited'
@@ -1210,7 +1214,7 @@ def main(app_lst=app_lst_default, shift=180):
         s2 = snip_shot(sql_meta_info_workshops, his_d_default)
         if cunter > 5:
             cunter = 0
-            sql_meta_info_default = sql_get_all_info(app_lst_default)
+            sql_meta_info_default = sql_get_all_info(app_lst)
             sql_meta_info_workshops = sql_get_all_info(app_lst, comp='workshop')
         how_about_sleep(shift)
 
