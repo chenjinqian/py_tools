@@ -45,9 +45,9 @@ from gevent import monkey;monkey.patch_all()
 
 # # if this script is started in other working directiory.
 import os,sys
-this_path = os.path.realpath(os.path.dirname(__file__))
-# #### change
-# this_path = os.path.realpath(os.path.dirname('__file__'))
+# this_path = os.path.realpath(os.path.dirname(__file__))
+#### change
+this_path = os.path.realpath(os.path.dirname('__file__'))
 db_ini_path = os.path.join(this_path, '../config/db.ini')
 
 
@@ -90,9 +90,9 @@ default_d['rsrv'] = 'redis:meter'
 # # 'mysql:app_eemsop', not used
 default_d['app_lst'] = ['mysql:app_eemsyd', 'mysql:app_eemsii', 'mysql:app_eemssjc', 'mysql:app_eemsakuup',  'mysql:app_eemscr', 'mysql:app_eemssec']
 default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
-default_d['ckps'] = [0, 60*30, 60*30*7]
+default_d['ckps'] = [0, 60*15*2, 60*15*14]
 # right now, half hour, three and half hour.
-default_d['ckps_four_hour'] = [0, 60*30*2, 60*30*3, 60*30*4, 60*30*5, 60*30*6]
+default_d['ckps_init'] = [0, 60*15*1, 60*15*3, 60*15*5, 60*15*7, 60*15*9, 60*15*11, 60*15*13, 60*15*14]
 # Notice: this should not overlap nore be neared, if the first round init problem is not solved.
 default_d['pttl_filter'] = False
 # if pttl value have obvious bad points, filter this points out using pee-compare in sumup function.
@@ -100,7 +100,7 @@ rsrv_default = default_d['rsrv']
 app_lst_default = default_d['app_lst']
 vrs_s_default = default_d['vrs_s']
 ckps_default = default_d['ckps']
-ckps_four_hour = default_d['ckps']
+ckps_init_default = default_d['ckps_init']
 # if it is needed to check all four hour kwh value at script init run.
 
 
@@ -922,14 +922,15 @@ def one_comp(cid, n=30, mul=True, app='mysql:app_eemsop', comp='company',
         return thread_one(*lst)
     def mk_redis_tasks(mids=one_comp_mids, ckps=ckps, cid=cid, interval=interval):
         tasks = []
+        ckps_sorted = sorted(ckps)
         if init_history:
             print('init mk_redis_tasks')
-            for t in ckps:
+            for t in ckps_sorted:
                 for mid in mids:
                     one_task = [[cid, mid, t+interval, True], [cid, mid, t, False]]
                     tasks += one_task
         else:
-            tasks = [[cid, mid, t, False] for mid in mids for t in ckps]
+            tasks = [[cid, mid, t, False] for mid in mids for t in ckps_sorted]
         return tasks
 
     def get_redis_keys_and_meta_info(lst):
@@ -1075,7 +1076,7 @@ def sql_op(info_dict, workers_d=mysql_workers_d):
     return sqls
 
 
-def snip_shot(meta_d={}, his_d={}, no_sql_op = False):
+def snip_shot(meta_d={}, his_d={}, no_sql_op = False, ckps = ckps_default):
     app_comps = meta_d.keys()
     def produce_task(meta_d=meta_d):
         for app_comp in app_comps:
@@ -1089,7 +1090,8 @@ def snip_shot(meta_d={}, his_d={}, no_sql_op = False):
     # rst_snp = [one_comp(i[0],n=20, app=i[1]) for i in produce_task()]
     # cp9 = gpol(9)
     # rst_snp = cp9.map(lambda lst: one_comp(lst[0], app=lst[1], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
-    rst_snp = map(lambda lst: one_comp(lst[0], app=lst[1], comp=lst[2], his_d=his_d, sql_meta_info=meta_d), (i for i in produce_task()))
+    rst_snp = map(lambda lst: one_comp(lst[0], app=lst[1], comp=lst[2], his_d=his_d, sql_meta_info=meta_d, ckps=ckps),
+                  (i for i in produce_task()))
     if not no_sql_op:
         sql_ops = map(sql_op, (d for d in rst_snp))
     # no exception here.
@@ -1201,18 +1203,25 @@ fee_d_one = {'mysql:app_eemsop/company/25/20170118_090000':
               'spfv': 'v'}}
 
 
-def main(app_lst=app_lst_default, shift=180):
+def main(app_lst=app_lst_default, shift=180, ckps_init=ckps_init_default, ckps=ckps_default):
     # TODO: sys argment parse, app_lst, and shift
     sql_meta_info_default = sql_get_all_info(app_lst)
     sql_meta_info_workshops = sql_get_all_info(app_lst, comp='workshop')
     his_d_default = {}
     cunter = 0
+    first_round = True
     # TODO: command parameter.
     while True:
+        if first_round:
+            first_round = False if cunter else True
+            # # actually, I want init ckps process run two times, so borrow this cunter to do this.
+            ckps_cur = ckps_init
+        else:
+            ckps_cur = ckps
         cunter += 1
-        s1 = snip_shot(sql_meta_info_default, his_d_default)
-        s2 = snip_shot(sql_meta_info_workshops, his_d_default)
-        if cunter > 5:
+        s1 = snip_shot(sql_meta_info_default, his_d_default, ckps=ckps_cur)
+        s2 = snip_shot(sql_meta_info_workshops, his_d_default, ckps=ckps_cur)
+        if cunter > 1:
             cunter = 0
             sql_meta_info_default = sql_get_all_info(app_lst)
             sql_meta_info_workshops = sql_get_all_info(app_lst, comp='workshop')
