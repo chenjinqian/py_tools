@@ -90,9 +90,11 @@ default_d['rsrv'] = 'redis:meter'
 # # 'mysql:app_eemsop', not used
 default_d['app_lst'] = ['mysql:app_eemsyd', 'mysql:app_eemsii', 'mysql:app_eemssjc', 'mysql:app_eemsakuup',  'mysql:app_eemscr', 'mysql:app_eemssec']
 default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli', 0], ['kvarhttle', 0], ['qttl', 2]]
-default_d['ckps'] = [0, 60*15*2, 60*15*18]
+# default_d['ckps'] = [0, 60*15*2, 60*15*18]
+default_d['ckps'] = [0, 60*15*2, 60*15*10]
 # right now, half hour, three and half hour.
-default_d['ckps_init'] = [0, 60*15*1, 60*15*3, 60*15*5, 60*15*7, 60*15*9, 60*15*11, 60*15*13, 60*15*14]
+# default_d['ckps_init'] = [0, 60*15*1, 60*15*3, 60*15*5, 60*15*7, 60*15*9, 60*15*11, 60*15*13, 60*15*14]
+default_d['ckps_init'] = [0, 60*15*1, 60*15*3, 60*15*5, 60*15*7, 60*15*9]
 # Notice: this should not overlap nore be neared, if the first round init problem is not solved.
 default_d['pttl_filter'] = False
 # if pttl value have obvious bad points, filter this points out using pee-compare in sumup function.
@@ -860,9 +862,12 @@ def apply_pli(vr_d, price_d, pli_d,meter_id_time_str='', interval=900):
         tmp_d['q'] = vr_d['kvarhttli'] * trans_factor
     else:
         tmp_d['_use_power'] = pli_d['use_power']
-        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
-        tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * 4) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
+        # tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
+        # tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * 4) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
+        tmp_d['p'] = ((vr_d['pttl'][0]) * 4) if not (vr_d['pttl'][0] is None) else None
+        tmp_d['q'] = ((vr_d['qttl'][0]) * 4) if not (vr_d['qttl'][0] is None) else None
         # TODO: confirm p add up method.
+        # DONE: not this way, at last.
         # Notice: 60 * 60 / interval
     if not tmp_d['kwhi'] is None:
         tmp_d['charge'] = rate * tmp_d['kwhi']
