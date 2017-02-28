@@ -17,7 +17,7 @@ import time, os, sys
 # dbini_d = dbini.check_config(db_type='mysql', convert_port=True)
 # r_webpage_pool = redis_pool.RedisWrapper(**dbini_d['redis:webpage'])
 # r = r_webpage_pool.get_cursor()
-# sop_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemsop'])
+# sop_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemsyd'])
 # sopw = sop_pool.do_work
 # sec_pool = mysql_pool.MySQLWrapper(**dbini_d['mysql:app_eemssec'])
 # secw = sec_pool.do_work
@@ -55,6 +55,9 @@ def mk_rp_d(ini='../config/db.ini', mark='redis:'):
 cfgd = rcfg.ReadConfig_DB('../config/db.ini').check_config(db_type='mysql', convert_port=True)
 mysql_worker_d = mk_mp_d()
 redis_cursor_d = mk_rp_d()
+app_lst_default = ['mysql:app_eemsyd', 'mysql:app_eemsii',
+                   'mysql:app_eemssjc', 'mysql:app_eemsakuup',
+                   'mysql:app_eemscr', 'mysql:app_eemssec']
 
 
 # sydw('select stat_time, company_id, kwh from elec_company_15min_2016 order by stat_time DESC, company_id limit 50;')
@@ -102,7 +105,7 @@ def mksql_today_sum(company_id='2', time_start='', time_end='', comp='company'):
     return sql
 
 
-def get_15m_last_n(company_id, point=3, app='mysql:app_eemsop', use_kwhi=True, comp='company'):
+def get_15m_last_n(company_id, point=3, app='mysql:app_eemsyd', use_kwhi=True, comp='company'):
     worker = mysql_worker_d[app]
     # sql_example = 'select * from elec_company_15min_2016 where company_id = 12 order by stat_time desc limit 5;'
     # sql = 'select * from %s where company_id=%s order by %s desc limit %s;' % (table_name, company_id, order_by, n)
@@ -111,7 +114,7 @@ def get_15m_last_n(company_id, point=3, app='mysql:app_eemsop', use_kwhi=True, c
     return res
 
 
-def get_sum_today(company_id, app='mysql:app_eemsop', time_start='', time_end='', comp='company'):
+def get_sum_today(company_id, app='mysql:app_eemsyd', time_start='', time_end='', comp='company'):
     worker = mysql_worker_d[app]
     # sql_example = 'select * from elec_company_15min_2016 where company_id = 12 order by stat_time desc limit 5;'
     # sql = 'select * from %s where company_id=%s order by %s desc limit %s;' % (table_name, company_id, order_by, n)
@@ -252,10 +255,10 @@ def resi_vs_ex(company_id=2, n = 96):
 
 
 # example
-r_k_example = 'web_eemsop_company_12_kwh:2016-12-23_171500'
+r_k_example = 'web_eemsyd_company_12_kwh:2016-12-23_171500'
 
 def pred_forward(last_rcds,kwh_sum,comp='company',
-                 pred_d={},sec=2700,app_redis_key_word='eemsop',company_id=2,fake_now='', **para_d):
+                 pred_d={},sec=2700,app_redis_key_word='eemsyd',company_id=2,fake_now='', **para_d):
     """use power prediction. last_rcds should have time-value pair.
     last_rcds is 3 records, kwh_sum is the sum.
     """
@@ -308,8 +311,8 @@ def pred_forward(last_rcds,kwh_sum,comp='company',
     return pred_d
 
 
-def pred_one(company_id=2, app='mysql:app_eemsop',
-             comp='company', app_redis_key_word='eemsop', use_kwhi=False, company_id_map=0):
+def pred_one(company_id=2, app='mysql:app_eemsyd',
+             comp='company', app_redis_key_word='eemsyd', use_kwhi=False, company_id_map=0):
     """
     company_id,
     comp,
@@ -352,29 +355,35 @@ def how_about_sleep(shift=480, interval=900, real_sleep=True):
     return sleep_for
 
 
-def main():
-    """
-    [[app, comp, id_lst], []...]
-    """
-    sopw = mysql_worker_d['mysql:app_eemsop']
-    company_all = sopw("select id from company;")
-    workshop_all = sopw("select id from workshops;")
+def get_app_meta(app, mysql_worker_d=mysql_worker_d):
+    redis_kw = app.split('_')[-1]
+    worker = mysql_worker_d[app]
+    company_all = worker("select id from company;")
+    workshop_all = worker("select id from workshops;")
+    return [redis_kw, app, company_all, workshop_all]
+
+
+def main_acc(redis_kw, app, company_all, workshop_all):
+    for i in company_all:
+        print(int(i[0]))
+        pred_one(company_id=int(i[0]), app=app, app_redis_key_word=redis_kw, comp='company')
+    for j in workshop_all:
+        print(int(j[0]))
+        pred_one(company_id=int(i[0]), app=app, app_redis_key_word=redis_kw, comp='workshop')
+    return  [company_all, workshop_all]
+
+
+def main(app_lst=app_lst_default):
     cnt = 0
+    meta_d = {}
     while True:
+        for app in app_lst:
+            print(app)
+            if cnt == 0 or cnt > 4:
+                meta_d[app] = get_app_meta(app)
+                cnt = 0
+            main_acc(*meta_d[app])
         cnt += 1
-        # pred_one(company_id=26, app='mysql:app_eemscr', app_redis_key_word='eemsop', use_kwhi=False, company_id_map=2026)
-        # rlt25 = pred_one(company_id=2025, app='mysql:app_eemsop', app_redis_key_word='eemsop')
-        for i in company_all:
-            print(int(i[0]))
-            pred_one(company_id=int(i[0]), app='mysql:app_eemsop', app_redis_key_word='eemsop', comp='company')
-        for j in workshop_all:
-            print(int(j[0]))
-            pred_one(company_id=int(i[0]), app='mysql:app_eemsop', app_redis_key_word='eemsop', comp='workshop')
-        if cnt > 100:
-            company_all = sopw("select id from company;")
-            workshop_all = sopw("select id from workshops;")
-        print('sleeping for 600')
-        # time.sleep(600)
         how_about_sleep()
 
 
