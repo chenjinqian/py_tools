@@ -93,7 +93,8 @@ default_d['vrs_s'] = [['kwhttli', 0], ['kwhttle', 0], ['pttl', 2], ['kvarhttli',
 default_d['ckps'] = [0, 60*15*2, 60*15*6, 60*15*10, 60*15*14, 60*15*18]
 # default_d['ckps'] = [0, 60*15*2, 60*15*10]
 # right now, half hour, three and half hour.
-default_d['ckps_init'] = [0, 60*15*1, 60*15*3, 60*15*5, 60*15*7, 60*15*9, 60*15*11, 60*15*13, 60*15*15, 60*15*17, 60*15*18]
+default_d['ckps_init'] = [0, 60*15*1, 60*15*3, 60*15*5, 60*15*7,
+                          60*15*9, 60*15*11, 60*15*13, 60*15*15, 60*15*17, 60*15*18]
 # default_d['ckps_init'] = [0, 60*15*1, 60*15*3, 60*15*5, 60*15*7, 60*15*9]
 # Notice: this should not overlap nore be neared, if the first round init problem is not solved.
 default_d['pttl_filter'] = False
@@ -676,7 +677,7 @@ def incr_sumup(history, v_left, ckp_values, ts_ckp, v_right=None, vrs_s=vrs_s_de
         def po(n):
             return (abs(n) + n) / float(2)
         def ne(n):
-            return (n - abs(n)) / float(2)
+            return (abs(n) - n) / float(2)
         for i in zip(ti_value_all[:-1], ti_value_all[1:]):
             [x1, y1], [x2, y2] = i
             if  s=='n':
@@ -846,8 +847,8 @@ def apply_pli(vr_d, price_d, pli_d,meter_id_time_str='', interval=900):
         # default value changed to 1.
         # pttl have two value as list, p+ and p-
         tmp_d['_use_energy'] = '0'
-        tmp_d['kwhi'] = None if vr_d['pttl'][0] is None else (vr_d['pttl'][0])
-        tmp_d['kwhe'] = None if vr_d['pttl'][1] is None else (vr_d['pttl'][1])
+        tmp_d['kwhi'] = vr_d['pttl'][0]
+        tmp_d['kwhe'] = vr_d['pttl'][1]
         tmp_d['kvarhi'] = vr_d['qttl'][0]
         tmp_d['kvarhe'] = vr_d['qttl'][1]
     else:
@@ -859,11 +860,19 @@ def apply_pli(vr_d, price_d, pli_d,meter_id_time_str='', interval=900):
     if  pli_d['use_power'] == '0':
         tmp_d['_use_power'] = '0'
         tmp_d['p'] = vr_d['kwhttli'] * trans_factor
+        tmp_d['pi'] = vr_d['kwhttli'] * trans_factor
+        tmp_d['pe'] = vr_d['kwhttle'] * trans_factor
         tmp_d['q'] = vr_d['kvarhttli'] * trans_factor
+        tmp_d['qi'] = vr_d['kvarhttli'] * trans_factor
+        tmp_d['qe'] = vr_d['kvarhttle'] * trans_factor
     else:
         tmp_d['_use_power'] = pli_d['use_power']
         tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
         tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * 4) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
+        tmp_d['pi'] = vr_d['pttl'][0]
+        tmp_d['pe'] = vr_d['pttl'][1]
+        tmp_d['qi'] = vr_d['qttl'][0]
+        tmp_d['qe'] = vr_d['qttl'][1]
         # tmp_d['p'] = ((vr_d['pttl'][0]) * 4) if not (vr_d['pttl'][0] is None) else None
         # tmp_d['q'] = ((vr_d['qttl'][0]) * 4) if not (vr_d['qttl'][0] is None) else None
         # # TODO: confirm p add up method.
@@ -1061,14 +1070,16 @@ def sql_op(info_dict, workers_d=mysql_workers_d):
         worker = workers_d[app_complex]
         # stat_time = sd['_times']
         ### NOTICE: write kwh as well as kwhi
-        sql = "insert into elec_%s_15min_%s (stat_time,%s_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv,kwh) values \
-        ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s','%s') on duplicate key update \
-        charge='%s', kwhi='%s', kwhe='%s', kvarhi='%s', kvarhe='%s', p='%s', q='%s', spfv='%s', kwh='%s'" % \
+        sql = "insert into elec_%s_15min_%s (stat_time,%s_id,charge,kwhi,kwhe,kvarhi,kvarhe,p,q,spfv,\
+        kwh,pi,pe,qi,qe) values \
+        ('%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s') on duplicate key update \
+        charge='%s', kwhi='%s', kwhe='%s', kvarhi='%s', kvarhe='%s', p='%s', q='%s', spfv='%s', \
+        kwh='%s', pi='%s', pe='%s', qi='%s', qe='%s' " % \
         (comp,time.strftime('%Y',time.localtime()),comp,sd['_times'],int(cid),sd['charge'],sd['kwhi'],sd['kwhe'],
          sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'],
-         sd['kwhi'],
+         sd['kwhi'], sd['pi'], sd['pe'], sd['qi'], sd['qe'],
          sd['charge'],sd['kwhi'],sd['kwhe'],sd['kvarhi'], sd['kvarhe'], sd['p'], sd['q'], sd['spfv'],
-         sd['kwhi'])
+         sd['kwhi'], sd['pi'], sd['pe'], sd['qi'], sd['qe'])
         sqls.append(sql)
         try:
             worker(sql, commit=True)
