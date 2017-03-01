@@ -867,12 +867,12 @@ def apply_pli(vr_d, price_d, pli_d,meter_id_time_str='', interval=900):
         tmp_d['qe'] = vr_d['kvarhttle'] * trans_factor
     else:
         tmp_d['_use_power'] = pli_d['use_power']
-        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * 4) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
-        tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * 4) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
-        tmp_d['pi'] = vr_d['pttl'][0]
-        tmp_d['pe'] = vr_d['pttl'][1]
-        tmp_d['qi'] = vr_d['qttl'][0]
-        tmp_d['qe'] = vr_d['qttl'][1]
+        tmp_d['p'] = ((vr_d['pttl'][0] - vr_d['pttl'][1]) * trans_factor) if not (vr_d['pttl'][0] is None or vr_d['pttl'][1] is None) else None
+        tmp_d['q'] = ((vr_d['qttl'][0] - vr_d['qttl'][1]) * trans_factor) if not (vr_d['qttl'][0] is None or vr_d['qttl'][1] is None) else None
+        tmp_d['pi'] = vr_d['pttl'][0] * trans_factor
+        tmp_d['pe'] = vr_d['pttl'][1] * trans_factor
+        tmp_d['qi'] = vr_d['qttl'][0] * trans_factor
+        tmp_d['qe'] = vr_d['qttl'][1] * trans_factor
         # tmp_d['p'] = ((vr_d['pttl'][0]) * 4) if not (vr_d['pttl'][0] is None) else None
         # tmp_d['q'] = ((vr_d['qttl'][0]) * 4) if not (vr_d['qttl'][0] is None) else None
         # # TODO: confirm p add up method.
